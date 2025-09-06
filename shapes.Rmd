@@ -43,22 +43,31 @@ cobertura <- st_read("Cobertura_cafe_2017-2018.shp")
 
 # Establecer sistema de coordenadas
 regiones <- st_set_crs(regiones, 5367) # EPSG 5367 = CRTM05
-cobertura <- st_set_crs(cobertura, 5367)  # EPSG 5367 = CRTM05
+cobertura <- st_set_crs(cobertura, 5367) # EPSG 5367 = CRTM05
 
 # Transformar sistemas de coordenadas
 regiones <- st_transform(regiones, 4326)
 cobertura <- st_transform(cobertura, 4326)
 
 # Intentar corregir geometrías inválidas
-# Reparar auto-intersecciones: Si un polígono se cruza a sí mismo, la función puede dividirlo en partes válidas o recortarlo para eliminar las intersecciones.
-# Eliminar vértices duplicados: Borra puntos consecutivos idénticos o muy cercanos que no aportan a la forma.
-# Cerrar anillos abiertos: Si un anillo no está cerrado (el último punto no coincide con el primero), la función lo cierra automáticamente.
-# Separar polígonos multi-parte mal formados: En caso de geometrías compuestas o multi-polígonos con problemas, los separa en partes válidas.
-# Corregir orientación de anillos: Puede ajustar la dirección en la que están ordenados los vértices para cumplir las convenciones.
-if( any( !st_is_valid( regiones ) ) ) {
+#   Reparar auto-intersecciones:
+#     Si un polígono se cruza a sí mismo, la función puede dividirlo en partes
+#     válidas o recortarlo para eliminar las intersecciones.
+#   Eliminar vértices duplicados:
+#     Borra puntos consecutivos idénticos o muy cercanos que no aportan nada.
+#   Cerrar anillos abiertos:
+#     Si un anillo no está cerrado (el último punto no coincide con el primero),
+#     la función lo cierra automáticamente.
+#   Separar polígonos multi-parte mal formados:
+#     En caso de que geometrías compuestas o multi-polígonos
+#     presenten problemas, se les separa en partes válidas.
+#   Corregir orientación de anillos:
+#     Puede ajustar la dirección en la que están ordenados los vértices
+#     para cumplir las convenciones.
+if (any(!st_is_valid(regiones))) {
   regiones <- st_make_valid(regiones)
 }
-if( any( !st_is_valid( cobertura ) ) ) {
+if (any(!st_is_valid(cobertura))) {
   cobertura <- st_make_valid(cobertura)
 }
 ```
@@ -68,79 +77,91 @@ if( any( !st_is_valid( cobertura ) ) ) {
 regiones <- regiones %>% mutate(etiqueta = paste("Región", row_number()))
 
 # Región Norte
-region_Norte <- regiones %>% filter(etiqueta == "Región 5")
+region_norte <- regiones %>% filter(etiqueta == "Región 5")
 
 # Región Los Santos
-region_LosSantos <- regiones %>% filter(etiqueta == "Región 2")
+region_santos <- regiones %>% filter(etiqueta == "Región 2")
 
 # Encontrar fincas que están dentro de la zona cafetalera Norte
-cobertura_Norte <- cobertura[st_within(cobertura, region_Norte, sparse = FALSE)[,1],]
+cobertura_norte <- cobertura[
+  st_within(cobertura, region_norte, sparse = FALSE)[, 1],
+]
 
 # Encontrar fincas que están dentro de la zona cafetalera Los Santos
-cobertura_LosSantos <- cobertura[st_within(cobertura, region_LosSantos, sparse = FALSE)[,1],]
+cobertura_santos <- cobertura[
+  st_within(cobertura, region_santos, sparse = FALSE)[, 1],
+]
 
 # Rectángulo que contiene toda la cobertura en la zona cafetalera Norte
-rectangulo_Norte <- st_bbox(cobertura_Norte)
+rectangulo_norte <- st_bbox(cobertura_norte)
 
 # Rectángulo que contiene toda la cobertura en la zona cafetalera Los Santos
-rectangulo_LosSantos <- st_bbox(cobertura_LosSantos)
+rectangulo_santos <- st_bbox(cobertura_santos)
 
 # Rectángulo (Norte) convertido en polígono para gráficos
-rectangulo_Norte2 <- st_as_sfc(rectangulo_Norte)
+rectangulo_norte2 <- st_as_sfc(rectangulo_norte)
 
 # Rectángulo (Los Santos) convertido en polígono para gráficos
-rectangulo_LosSantos2 <- st_as_sfc(rectangulo_LosSantos)
+rectangulo_santos2 <- st_as_sfc(rectangulo_santos)
 
 # Área en hectáreas de las fincas Norte
-area_Norte <-
-  as.numeric(st_area(st_transform(cobertura_Norte, 5367))) / 10000
+area_norte <-
+  as.numeric(st_area(st_transform(cobertura_norte, 5367))) / 10000
 
 # Área en hectáreas de las fincas Los Santos
-area_LosSantos <-
-  as.numeric(st_area(st_transform(cobertura_LosSantos, 5367))) / 10000
+area_santos <-
+  as.numeric(st_area(st_transform(cobertura_santos, 5367))) / 10000
 
 # Centroides de las fincas Norte
-centroides_Norte <- st_centroid(cobertura_Norte)
+centroides_norte <- st_centroid(cobertura_norte)
 
 # Centroides de las fincas Los Santos
-centroides_LosSantos <- st_centroid(cobertura_LosSantos)
+centroides_santos <- st_centroid(cobertura_santos)
 
 # Coordenadas de los centroides en fincas Norte
-centroides_Norte <- 
-  cbind( centroides_Norte,
-         as.data.frame( st_coordinates(centroides_Norte) ) %>%
-           rename( "lon" = 1, "lat" = 2 ) ) %>%
-  mutate( area = area_Norte )
+centroides_norte <-
+  cbind(
+    centroides_norte,
+    as.data.frame(st_coordinates(centroides_norte)) %>%
+      rename("lon" = 1, "lat" = 2)
+  ) %>%
+  mutate(area = area_norte)
 
 # Coordenadas de los centroides en fincas Los Santos
-centroides_LosSantos <- 
-  cbind( centroides_LosSantos, 
-         as.data.frame( st_coordinates(centroides_LosSantos) ) %>%
-           rename( "lon" = 1, "lat" = 2 ) ) %>%
-  mutate( area = area_LosSantos )
+centroides_santos <-
+  cbind(
+    centroides_santos,
+    as.data.frame(st_coordinates(centroides_santos)) %>%
+      rename("lon" = 1, "lat" = 2)
+  ) %>%
+  mutate(area = area_santos)
 
 # Redondear al múltiplo de 0.05 más cercano (comparten misma resolución)
-centroides_Norte <- 
-  centroides_Norte %>% 
-  mutate( lon_round = round(lon / 0.05) * 0.05,
-          lat_round = round(lat / 0.05) * 0.05 )
+centroides_norte <-
+  centroides_norte %>%
+  mutate(
+    lon_round = round(lon / 0.05) * 0.05,
+    lat_round = round(lat / 0.05) * 0.05
+  )
 
-resumen_coords_Norte <- 
-  centroides_Norte %>%
-  group_by( lon_round, lat_round ) %>%
-  summarise( n_fincas = n(), area = sum(area), .groups = "drop" ) %>%
-  rename( "lon" = 1, "lat" = 2 )
+resumen_coords_norte <-
+  centroides_norte %>%
+  group_by(lon_round, lat_round) %>%
+  summarise(n_fincas = n(), area = sum(area), .groups = "drop") %>%
+  rename("lon" = 1, "lat" = 2)
 
-centroides_LosSantos <- 
-  centroides_LosSantos %>% 
-  mutate( lon_round = round(lon / 0.05) * 0.05,
-          lat_round = round(lat / 0.05) * 0.05 )
+centroides_santos <-
+  centroides_santos %>%
+  mutate(
+    lon_round = round(lon / 0.05) * 0.05,
+    lat_round = round(lat / 0.05) * 0.05
+  )
 
-resumen_coords_LosSantos <- 
-  centroides_LosSantos %>%
-  group_by( lon_round, lat_round ) %>%
-  summarise( n_fincas = n(), area = sum(area), .groups = "drop" ) %>%
-  rename( "lon" = 1, "lat" = 2 )
+resumen_coords_santos <-
+  centroides_santos %>%
+  group_by(lon_round, lat_round) %>%
+  summarise(n_fincas = n(), area = sum(area), .groups = "drop") %>%
+  rename("lon" = 1, "lat" = 2)
 ```
 
 
@@ -149,11 +170,14 @@ resumen_coords_LosSantos <-
 lista_anual_Norte <- list()
 
 for (x_anno in 1:21) {
-  lista_anual_Norte[[x_anno]] <- 
-    get_chirps( resumen_coords_Norte %>% select(lon,lat), 
-                dates = c(paste0(x_anno+2004-1,"-01-01"),
-                          paste0(x_anno+2004-1,"-12-31")),
-                          server = "ClimateSERV" )
+  lista_anual_Norte[[x_anno]] <-
+    get_chirps(resumen_coords_norte %>% select(lon, lat),
+      dates = c(
+        paste0(x_anno + 2004 - 1, "-01-01"),
+        paste0(x_anno + 2004 - 1, "-12-31")
+      ),
+      server = "ClimateSERV"
+    )
 }
 names(lista_anual_Norte) <- "2004":"2024"
 
@@ -161,11 +185,14 @@ names(lista_anual_Norte) <- "2004":"2024"
 lista_anual_LosSantos <- list()
 
 for (x_anno in 1:21) {
-  lista_anual_LosSantos[[x_anno]] <- 
-    get_chirps( resumen_coords_LosSantos %>% select(lon,lat), 
-                dates = c(paste0(x_anno+2004-1,"-01-01"),
-                          paste0(x_anno+2004-1,"-12-31")),
-                          server = "ClimateSERV" )
+  lista_anual_LosSantos[[x_anno]] <-
+    get_chirps(resumen_coords_santos %>% select(lon, lat),
+      dates = c(
+        paste0(x_anno + 2004 - 1, "-01-01"),
+        paste0(x_anno + 2004 - 1, "-12-31")
+      ),
+      server = "ClimateSERV"
+    )
 }
 
 names(lista_anual_LosSantos) <- "2004":"2024"
@@ -179,24 +206,25 @@ leaflet(grids_LosSantos) %>%
     fillOpacity = 0.6,
     color = "black",
     weight = 1,
-    label = ~paste(n_fincas, "fincas")
+    label = ~ paste(n_fincas, "fincas")
   )
 
 
 
 
-precipitaciones <- get_chirps( resumen_coords, 
-                               dates = c("2022-01-01", "2022-12-31"),
-                               server = "ClimateSERV" )
+precipitaciones <- get_chirps(resumen_coords,
+  dates = c("2022-01-01", "2022-12-31"),
+  server = "ClimateSERV"
+)
 
 precipitaciones %>%
   group_by(lat, lon) %>%
-  summarise(total_precip = sum(chirps, na.rm = TRUE), .groups = "drop" )
+  summarise(total_precip = sum(chirps, na.rm = TRUE), .groups = "drop")
 
 
 precipitaciones %>%
   group_by(lat, lon) %>%
-  summarise(total_precip = sum(chirps, na.rm = TRUE), .groups = "drop" ) %>%
+  summarise(total_precip = sum(chirps, na.rm = TRUE), .groups = "drop") %>%
   leaflet() %>%
   addProviderTiles("CartoDB.Positron") %>%
   addCircles(
@@ -204,26 +232,25 @@ precipitaciones %>%
     lat = ~lat,
     weight = 1,
     radius = 1000,
-    color = ~colorNumeric("YlGnBu", total_precip)(total_precip),
+    color = ~ colorNumeric("YlGnBu", total_precip)(total_precip),
     fillOpacity = 0.7,
-    label = ~paste("Precipitación total:", round(total_precip, 2), "mm")
+    label = ~ paste("Precipitación total:", round(total_precip, 2), "mm")
   )
 
 leaflet() %>%
   addTiles() %>%
-  addPolygons(data = rectangulo_LosSantos2, color = "blue", fillOpacity = 0.05) %>%
-  addPolygons(data = cobertura_LosSantos, color = "green", fillOpacity = 0.3)
+  addPolygons(data = rectangulo_santos2, color = "blue", fillOpacity = 0.05) %>%
+  addPolygons(data = cobertura_santos, color = "green", fillOpacity = 0.3)
 
 
 leaflet() %>%
   addTiles() %>%
-  addPolygons(data = rectangulo_Norte2, color = "blue", fillOpacity = 0.05) %>%
-  addPolygons(data = cobertura_Norte, color = "green", fillOpacity = 0.3)
+  addPolygons(data = rectangulo_norte2, color = "blue", fillOpacity = 0.05) %>%
+  addPolygons(data = cobertura_norte, color = "green", fillOpacity = 0.3)
 
 leaflet() %>%
   addProviderTiles("CartoDB.Positron") %>%
-  addPolygons(data = fincas_santos, fillColor = "green", fillOpacity = 0.4, color = "black") 
-
+  addPolygons(data = fincas_santos, fillColor = "green", fillOpacity = 0.4, color = "black")
 ```
 
 ```{r Promedios}
@@ -241,25 +268,27 @@ chirps_prom_LosSantos <- bind_rows(lista_anual_LosSantos, .id = "year") %>%
   summarise(precip_anual_prom = mean(precip_anual, na.rm = TRUE), .groups = "drop")
 
 # Unir datos para Norte
-resumen_coords_Norte <- resumen_coords_Norte %>%
+resumen_coords_norte <- resumen_coords_norte %>%
   left_join(chirps_prom_Norte, by = c("lon", "lat"))
 
 # Unir datos para Los Santos
-resumen_coords_LosSantos <- resumen_coords_LosSantos %>%
+resumen_coords_santos <- resumen_coords_santos %>%
   left_join(chirps_prom_LosSantos, by = c("lon", "lat"))
 
 # Crear cuadriculas de las zonas cafetaleras
-grids_Norte <- 
-  resumen_coords_Norte %>%
+grids_Norte <-
+  resumen_coords_norte %>%
   rowwise() %>%
   mutate(
     geometry = list(
       st_polygon(list(matrix(
-        c(lon - 0.025, lat - 0.025,
+        c(
+          lon - 0.025, lat - 0.025,
           lon + 0.025, lat - 0.025,
           lon + 0.025, lat + 0.025,
           lon - 0.025, lat + 0.025,
-          lon - 0.025, lat - 0.025),
+          lon - 0.025, lat - 0.025
+        ),
         ncol = 2,
         byrow = TRUE
       )))
@@ -268,17 +297,19 @@ grids_Norte <-
   ungroup() %>%
   st_as_sf(crs = 4326, sf_column_name = "geometry")
 
-grids_LosSantos <- 
-  resumen_coords_LosSantos %>%
+grids_LosSantos <-
+  resumen_coords_santos %>%
   rowwise() %>%
   mutate(
     geometry = list(
       st_polygon(list(matrix(
-        c(lon - 0.025, lat - 0.025,
+        c(
+          lon - 0.025, lat - 0.025,
           lon + 0.025, lat - 0.025,
           lon + 0.025, lat + 0.025,
           lon - 0.025, lat + 0.025,
-          lon - 0.025, lat - 0.025),
+          lon - 0.025, lat - 0.025
+        ),
         ncol = 2,
         byrow = TRUE
       )))
@@ -296,11 +327,11 @@ rango_comun <- range(c(grids_Norte$precip_anual_prom, grids_LosSantos$precip_anu
 leaflet(grids_LosSantos) %>%
   addProviderTiles("CartoDB.Positron") %>%
   addPolygons(
-    fillColor = ~pal_comun(precip_anual_prom),
+    fillColor = ~ pal_comun(precip_anual_prom),
     fillOpacity = 0.7,
     color = "gray",
     weight = 1,
-    label = ~paste0(
+    label = ~ paste0(
       "Lluvia: ", round(precip_anual_prom, 1), " mm\n",
       "Área: ", round(area, 1), " ha\n",
       "Fincas: ", n_fincas
@@ -316,18 +347,18 @@ leaflet(grids_LosSantos) %>%
 leaflet(grids_Norte) %>%
   addProviderTiles("CartoDB.Positron") %>%
   addPolygons(
-    fillColor = ~pal_comun(precip_anual_prom),
+    fillColor = ~ pal_comun(precip_anual_prom),
     fillOpacity = 0.7,
     color = "gray",
     weight = 1,
-    label = ~paste0(
+    label = ~ paste0(
       "Lluvia: ", round(precip_anual_prom, 1), " mm\n",
       "Área: ", round(area, 1), " ha\n",
       "Fincas: ", n_fincas
     )
   ) %>%
   addPolygons(
-    data = cobertura_Norte,
+    data = cobertura_norte,
     fillColor = "green",
     fillOpacity = 0.15,
     color = "darkgreen",
@@ -341,16 +372,20 @@ leaflet(grids_Norte) %>%
   )
 
 map_Norte <- tm_shape(grids_Norte) +
-  tm_polygons(fill = "precip_anual_prom",
-              fill.scale = tm_scale(values = "brewer.blues", breaks = seq(1500, 4500, 500)),
-              fill.legend = tm_legend(title = "Lluvia (mm)")) +
+  tm_polygons(
+    fill = "precip_anual_prom",
+    fill.scale = tm_scale(values = "brewer.blues", breaks = seq(1500, 4500, 500)),
+    fill.legend = tm_legend(title = "Lluvia (mm)")
+  ) +
   tm_borders(lwd = 0.5) +
   tm_title("Región Norte")
 
 map_LosSantos <- tm_shape(grids_LosSantos) +
-  tm_polygons(fill = "precip_anual_prom",
-              fill.scale = tm_scale(values = "brewer.blues", breaks = seq(1500, 4500, 500)),
-              fill.legend = tm_legend(title = "Lluvia (mm)")) +
+  tm_polygons(
+    fill = "precip_anual_prom",
+    fill.scale = tm_scale(values = "brewer.blues", breaks = seq(1500, 4500, 500)),
+    fill.legend = tm_legend(title = "Lluvia (mm)")
+  ) +
   tm_borders(lwd = 0.5) +
   tm_title("Región Los Santos")
 
@@ -365,26 +400,23 @@ pal_Norte <- colorNumeric("YlOrRd", domain = grids_Norte$n_fincas)
 
 leaflet() %>%
   addProviderTiles("CartoDB.Positron") %>%
-  
   # Cuadrantes CHIRPS
   addPolygons(
     data = grids_Norte,
-    fillColor = ~pal_Norte(n_fincas),
+    fillColor = ~ pal_Norte(n_fincas),
     fillOpacity = 0.7,
     color = "gray",
     weight = 1,
-    label = ~paste(n_fincas, "fincas")
+    label = ~ paste(n_fincas, "fincas")
   ) %>%
-  
   # Polígonos (transparentes) de cobertura cafetalera
   addPolygons(
-    data = cobertura_Norte,
+    data = cobertura_norte,
     fillColor = "green",
     fillOpacity = 0.2,
     color = "darkgreen",
     weight = 1
   ) %>%
-  
   # Leyenda (número de fincas)
   addLegend(
     "bottomright",
@@ -400,26 +432,23 @@ pal_Norte <- colorNumeric("YlOrRd", domain = grids_Norte$area)
 
 leaflet() %>%
   addProviderTiles("CartoDB.Positron") %>%
-  
   # Cuadrantes CHIRPS con color por área
   addPolygons(
     data = grids_Norte,
-    fillColor = ~pal_Norte(area),
+    fillColor = ~ pal_Norte(area),
     fillOpacity = 0.7,
     color = "gray",
     weight = 1,
-    label = ~paste0(round(area, 2), " ha")
+    label = ~ paste0(round(area, 2), " ha")
   ) %>%
-  
   # Capa de cobertura cafetalera Los Santos (transparente)
   addPolygons(
-    data = cobertura_Norte,
+    data = cobertura_norte,
     fillColor = "green",
     fillOpacity = 0.2,
     color = "darkgreen",
     weight = 1
   ) %>%
-  
   # Leyenda
   addLegend(
     "bottomright",
@@ -438,26 +467,23 @@ pal_LosSantos <- colorNumeric("YlOrRd", domain = grids_LosSantos$n_fincas)
 
 leaflet() %>%
   addProviderTiles("CartoDB.Positron") %>%
-  
   # Cuadrantes CHIRPS
   addPolygons(
     data = grids_LosSantos,
-    fillColor = ~pal_LosSantos(n_fincas),
+    fillColor = ~ pal_LosSantos(n_fincas),
     fillOpacity = 0.7,
     color = "gray",
     weight = 1,
-    label = ~paste(n_fincas, "fincas")
+    label = ~ paste(n_fincas, "fincas")
   ) %>%
-  
   # Polígonos (transparentes) de cobertura cafetalera
   addPolygons(
-    data = cobertura_LosSantos,
+    data = cobertura_santos,
     fillColor = "green",
     fillOpacity = 0.2,
     color = "darkgreen",
     weight = 1
   ) %>%
-  
   # Leyenda (número de fincas)
   addLegend(
     "bottomright",
@@ -473,26 +499,23 @@ pal_LosSantos <- colorNumeric("YlOrRd", domain = grids_LosSantos$area)
 
 leaflet() %>%
   addProviderTiles("CartoDB.Positron") %>%
-  
   # Cuadrantes CHIRPS con color por área
   addPolygons(
     data = grids_LosSantos,
-    fillColor = ~pal_LosSantos(area),
+    fillColor = ~ pal_LosSantos(area),
     fillOpacity = 0.7,
     color = "gray",
     weight = 1,
-    label = ~paste0(round(area, 2), " ha")
+    label = ~ paste0(round(area, 2), " ha")
   ) %>%
-  
   # Capa de cobertura cafetalera Los Santos (transparente)
   addPolygons(
-    data = cobertura_LosSantos,
+    data = cobertura_santos,
     fillColor = "green",
     fillOpacity = 0.2,
     color = "darkgreen",
     weight = 1
   ) %>%
-  
   # Leyenda
   addLegend(
     "bottomright",
@@ -505,8 +528,8 @@ leaflet() %>%
 
 ```{r graphs serie}
 # Gráfico de serie de tiempo
-pixel_Norte     <- resumen_coords_Norte %>% slice_max(area, n = 1)
-pixel_LosSantos <- resumen_coords_LosSantos %>% slice_max(area, n = 1)
+pixel_Norte <- resumen_coords_norte %>% slice_max(area, n = 1)
+pixel_LosSantos <- resumen_coords_santos %>% slice_max(area, n = 1)
 
 prec_Norte <- bind_rows(lista_anual_Norte, .id = "año") %>%
   filter(lat == pixel_Norte$lat, lon == pixel_Norte$lon)
@@ -530,7 +553,7 @@ serie_prec <- bind_rows(prec_Norte, prec_LosSantos)
 
 ggplot(serie_prec, aes(x = mes, y = precip_mm, color = region)) +
   geom_line(linewidth = 0.8) +
-  labs( x = "Fecha", y = "Precipitación (mm)", color = "Región" ) +
+  labs(x = "Fecha", y = "Precipitación (mm)", color = "Región") +
   theme_minimal()
 ```
 
@@ -552,24 +575,25 @@ chirps_data <- get_chirps(
 
 # Crear secuencia de coordenadas
 longitudes <- seq(bounding_rect$xmin, bounding_rect$xmax, by = 0.05)
-latitudes  <- seq(bounding_rect$ymin, bounding_rect$ymax, by = 0.05)
+latitudes <- seq(bounding_rect$ymin, bounding_rect$ymax, by = 0.05)
 
 longitudes
 latitudes
 
 # Case 1: return as a data.frame
-dates <- c("2017-09-01","2017-09-30")
-lonlat <- data.frame(lon = c(-55.150,-55.199), lat = c(-2.851, -2.849))
+dates <- c("2017-09-01", "2017-09-30")
+lonlat <- data.frame(lon = c(-55.150, -55.199), lat = c(-2.851, -2.849))
 
 r1 <- get_chirps(lonlat, dates, server = "CHC")
-r1 %>% group_by( date ) %>% summarise( restas = first(chirps) - last(chirps), .groups = "drop" ) %>% summarise( cero = sum(restas) )
-
+r1 %>%
+  group_by(date) %>%
+  summarise(restas = first(chirps) - last(chirps), .groups = "drop") %>%
+  summarise(cero = sum(restas))
 ```
 
 ```{r}
-trunc(c(-55.051,-55.049) / 0.05) * 0.05
-round(c(-55.051,-55.049) / 0.05) * 0.05
-
+trunc(c(-55.051, -55.049) / 0.05) * 0.05
+round(c(-55.051, -55.049) / 0.05) * 0.05
 ```
 
 
