@@ -167,10 +167,10 @@ resumen_coords_santos <-
 
 ```{r CHIRPS}
 # Descargar información CHIRPS región Norte
-lista_anual_Norte <- list()
+lista_anual_norte <- list()
 
 for (x_anno in 1:21) {
-  lista_anual_Norte[[x_anno]] <-
+  lista_anual_norte[[x_anno]] <-
     get_chirps(resumen_coords_norte %>% select(lon, lat),
       dates = c(
         paste0(x_anno + 2004 - 1, "-01-01"),
@@ -179,13 +179,13 @@ for (x_anno in 1:21) {
       server = "ClimateSERV"
     )
 }
-names(lista_anual_Norte) <- "2004":"2024"
+names(lista_anual_norte) <- "2004":"2024"
 
 # Descargar información CHIRPS región Los Santos
-lista_anual_LosSantos <- list()
+lista_anual_santos <- list()
 
 for (x_anno in 1:21) {
-  lista_anual_LosSantos[[x_anno]] <-
+  lista_anual_santos[[x_anno]] <-
     get_chirps(resumen_coords_santos %>% select(lon, lat),
       dates = c(
         paste0(x_anno + 2004 - 1, "-01-01"),
@@ -195,11 +195,11 @@ for (x_anno in 1:21) {
     )
 }
 
-names(lista_anual_LosSantos) <- "2004":"2024"
+names(lista_anual_santos) <- "2004":"2024"
 
 
 
-leaflet(grids_LosSantos) %>%
+leaflet(grids_santos) %>%
   addProviderTiles("CartoDB.Positron") %>%
   addPolygons(
     fillColor = "orange",
@@ -250,33 +250,44 @@ leaflet() %>%
 
 leaflet() %>%
   addProviderTiles("CartoDB.Positron") %>%
-  addPolygons(data = fincas_santos, fillColor = "green", fillOpacity = 0.4, color = "black")
+  addPolygons(
+    data = fincas_santos,
+    fillColor = "green",
+    fillOpacity = 0.4,
+    color = "black"
+  )
 ```
 
 ```{r Promedios}
 # Precipitación promedio anual por píxel de cada región
-chirps_prom_Norte <- bind_rows(lista_anual_Norte, .id = "year") %>%
+chirps_prom_norte <- bind_rows(lista_anual_norte, .id = "year") %>%
   group_by(year, lon, lat) %>%
   summarise(precip_anual = sum(chirps), .groups = "drop") %>%
   group_by(lon, lat) %>%
-  summarise(precip_anual_prom = mean(precip_anual, na.rm = TRUE), .groups = "drop")
+  summarise(
+    precip_anual_prom = mean(precip_anual, na.rm = TRUE),
+    .groups = "drop"
+  )
 
-chirps_prom_LosSantos <- bind_rows(lista_anual_LosSantos, .id = "year") %>%
+chirps_prom_santos <- bind_rows(lista_anual_santos, .id = "year") %>%
   group_by(year, lon, lat) %>%
   summarise(precip_anual = sum(chirps), .groups = "drop") %>%
   group_by(lon, lat) %>%
-  summarise(precip_anual_prom = mean(precip_anual, na.rm = TRUE), .groups = "drop")
+  summarise(
+    precip_anual_prom = mean(precip_anual, na.rm = TRUE),
+    .groups = "drop"
+  )
 
 # Unir datos para Norte
 resumen_coords_norte <- resumen_coords_norte %>%
-  left_join(chirps_prom_Norte, by = c("lon", "lat"))
+  left_join(chirps_prom_norte, by = c("lon", "lat"))
 
 # Unir datos para Los Santos
 resumen_coords_santos <- resumen_coords_santos %>%
-  left_join(chirps_prom_LosSantos, by = c("lon", "lat"))
+  left_join(chirps_prom_santos, by = c("lon", "lat"))
 
 # Crear cuadriculas de las zonas cafetaleras
-grids_Norte <-
+grids_norte <-
   resumen_coords_norte %>%
   rowwise() %>%
   mutate(
@@ -297,7 +308,7 @@ grids_Norte <-
   ungroup() %>%
   st_as_sf(crs = 4326, sf_column_name = "geometry")
 
-grids_LosSantos <-
+grids_santos <-
   resumen_coords_santos %>%
   rowwise() %>%
   mutate(
@@ -320,11 +331,17 @@ grids_LosSantos <-
 ```
 
 ```{r graphs promedios}
-pal_comun <- colorNumeric("Blues", domain = c(grids_LosSantos$precip_anual_prom, grids_Norte$precip_anual_prom))
+pal_comun <- colorNumeric(
+  "Blues",
+  domain = c(grids_santos$precip_anual_prom, grids_norte$precip_anual_prom)
+)
 
-rango_comun <- range(c(grids_Norte$precip_anual_prom, grids_LosSantos$precip_anual_prom), na.rm = TRUE)
+rango_comun <- range(
+  c(grids_norte$precip_anual_prom, grids_santos$precip_anual_prom),
+  na.rm = TRUE
+)
 
-leaflet(grids_LosSantos) %>%
+leaflet(grids_santos) %>%
   addProviderTiles("CartoDB.Positron") %>%
   addPolygons(
     fillColor = ~ pal_comun(precip_anual_prom),
@@ -344,7 +361,7 @@ leaflet(grids_LosSantos) %>%
     title = "Precipitación anual promedio (mm)"
   )
 
-leaflet(grids_Norte) %>%
+leaflet(grids_norte) %>%
   addProviderTiles("CartoDB.Positron") %>%
   addPolygons(
     fillColor = ~ pal_comun(precip_anual_prom),
@@ -371,30 +388,36 @@ leaflet(grids_Norte) %>%
     title = "Precipitación anual promedio (mm)"
   )
 
-map_Norte <- tm_shape(grids_Norte) +
+map_norte <- tm_shape(grids_norte) +
   tm_polygons(
     fill = "precip_anual_prom",
-    fill.scale = tm_scale(values = "brewer.blues", breaks = seq(1500, 4500, 500)),
+    fill.scale = tm_scale(
+      values = "brewer.blues",
+      breaks = seq(1500, 4500, 500)
+    ),
     fill.legend = tm_legend(title = "Lluvia (mm)")
   ) +
   tm_borders(lwd = 0.5) +
   tm_title("Región Norte")
 
-map_LosSantos <- tm_shape(grids_LosSantos) +
+map_santos <- tm_shape(grids_santos) +
   tm_polygons(
     fill = "precip_anual_prom",
-    fill.scale = tm_scale(values = "brewer.blues", breaks = seq(1500, 4500, 500)),
+    fill.scale = tm_scale(
+      values = "brewer.blues",
+      breaks = seq(1500, 4500, 500)
+    ),
     fill.legend = tm_legend(title = "Lluvia (mm)")
   ) +
   tm_borders(lwd = 0.5) +
   tm_title("Región Los Santos")
 
-tmap_arrange(map_Norte, map_LosSantos, ncol = 2)
+tmap_arrange(map_norte, map_santos, ncol = 2)
 ```
 
 ```{r graphs Norte}
 # Paleta de color para fincas
-pal_Norte <- colorNumeric("YlOrRd", domain = grids_Norte$n_fincas)
+pal_norte <- colorNumeric("YlOrRd", domain = grids_norte$n_fincas)
 
 # Gráfico cantidad de fincas
 
@@ -402,8 +425,8 @@ leaflet() %>%
   addProviderTiles("CartoDB.Positron") %>%
   # Cuadrantes CHIRPS
   addPolygons(
-    data = grids_Norte,
-    fillColor = ~ pal_Norte(n_fincas),
+    data = grids_norte,
+    fillColor = ~ pal_norte(n_fincas),
     fillOpacity = 0.7,
     color = "gray",
     weight = 1,
@@ -420,13 +443,13 @@ leaflet() %>%
   # Leyenda (número de fincas)
   addLegend(
     "bottomright",
-    pal = pal_Norte,
-    values = grids_Norte$n_fincas,
+    pal = pal_norte,
+    values = grids_norte$n_fincas,
     title = "Cantidad de fincas"
   )
 
 # Paleta de color para fincas
-pal_Norte <- colorNumeric("YlOrRd", domain = grids_Norte$area)
+pal_norte <- colorNumeric("YlOrRd", domain = grids_norte$area)
 
 # Gráfico área por cuadrícula
 
@@ -434,8 +457,8 @@ leaflet() %>%
   addProviderTiles("CartoDB.Positron") %>%
   # Cuadrantes CHIRPS con color por área
   addPolygons(
-    data = grids_Norte,
-    fillColor = ~ pal_Norte(area),
+    data = grids_norte,
+    fillColor = ~ pal_norte(area),
     fillOpacity = 0.7,
     color = "gray",
     weight = 1,
@@ -452,8 +475,8 @@ leaflet() %>%
   # Leyenda
   addLegend(
     "bottomright",
-    pal = pal_Norte,
-    values = grids_Norte$area,
+    pal = pal_norte,
+    values = grids_norte$area,
     title = "Área total de cafetales (ha)"
   )
 ```
@@ -461,7 +484,7 @@ leaflet() %>%
 
 ```{r graphs Los Santos}
 # Paleta de color para fincas
-pal_LosSantos <- colorNumeric("YlOrRd", domain = grids_LosSantos$n_fincas)
+pal_santos <- colorNumeric("YlOrRd", domain = grids_santos$n_fincas)
 
 # Gráfico cantidad de fincas
 
@@ -469,8 +492,8 @@ leaflet() %>%
   addProviderTiles("CartoDB.Positron") %>%
   # Cuadrantes CHIRPS
   addPolygons(
-    data = grids_LosSantos,
-    fillColor = ~ pal_LosSantos(n_fincas),
+    data = grids_santos,
+    fillColor = ~ pal_santos(n_fincas),
     fillOpacity = 0.7,
     color = "gray",
     weight = 1,
@@ -487,13 +510,13 @@ leaflet() %>%
   # Leyenda (número de fincas)
   addLegend(
     "bottomright",
-    pal = pal_LosSantos,
-    values = grids_LosSantos$n_fincas,
+    pal = pal_santos,
+    values = grids_santos$n_fincas,
     title = "Cantidad de fincas"
   )
 
 # Paleta de color para fincas
-pal_LosSantos <- colorNumeric("YlOrRd", domain = grids_LosSantos$area)
+pal_santos <- colorNumeric("YlOrRd", domain = grids_santos$area)
 
 # Gráfico área por cuadrícula
 
@@ -501,8 +524,8 @@ leaflet() %>%
   addProviderTiles("CartoDB.Positron") %>%
   # Cuadrantes CHIRPS con color por área
   addPolygons(
-    data = grids_LosSantos,
-    fillColor = ~ pal_LosSantos(area),
+    data = grids_santos,
+    fillColor = ~ pal_santos(area),
     fillOpacity = 0.7,
     color = "gray",
     weight = 1,
@@ -519,8 +542,8 @@ leaflet() %>%
   # Leyenda
   addLegend(
     "bottomright",
-    pal = pal_LosSantos,
-    values = grids_LosSantos$area,
+    pal = pal_santos,
+    values = grids_santos$area,
     title = "Área total de cafetales (ha)"
   )
 ```
@@ -528,28 +551,28 @@ leaflet() %>%
 
 ```{r graphs serie}
 # Gráfico de serie de tiempo
-pixel_Norte <- resumen_coords_norte %>% slice_max(area, n = 1)
-pixel_LosSantos <- resumen_coords_santos %>% slice_max(area, n = 1)
+pixel_norte <- resumen_coords_norte %>% slice_max(area, n = 1)
+pixel_santos <- resumen_coords_santos %>% slice_max(area, n = 1)
 
-prec_Norte <- bind_rows(lista_anual_Norte, .id = "año") %>%
-  filter(lat == pixel_Norte$lat, lon == pixel_Norte$lon)
+prec_norte <- bind_rows(lista_anual_norte, .id = "año") %>%
+  filter(lat == pixel_norte$lat, lon == pixel_norte$lon)
 
-prec_LosSantos <- bind_rows(lista_anual_LosSantos, .id = "año") %>%
-  filter(lat == pixel_LosSantos$lat, lon == pixel_LosSantos$lon)
+prec_santos <- bind_rows(lista_anual_santos, .id = "año") %>%
+  filter(lat == pixel_santos$lat, lon == pixel_santos$lon)
 
-prec_Norte <- prec_Norte %>%
+prec_norte <- prec_norte %>%
   mutate(fecha = ymd(date), mes = floor_date(fecha, "month")) %>%
   group_by(mes) %>%
   summarise(precip_mm = sum(chirps), .groups = "drop") %>%
   mutate(region = "Norte")
 
-prec_LosSantos <- prec_LosSantos %>%
+prec_santos <- prec_santos %>%
   mutate(fecha = ymd(date), mes = floor_date(fecha, "month")) %>%
   group_by(mes) %>%
   summarise(precip_mm = sum(chirps), .groups = "drop") %>%
   mutate(region = "Los Santos")
 
-serie_prec <- bind_rows(prec_Norte, prec_LosSantos)
+serie_prec <- bind_rows(prec_norte, prec_santos)
 
 ggplot(serie_prec, aes(x = mes, y = precip_mm, color = region)) +
   geom_line(linewidth = 0.8) +
@@ -561,7 +584,7 @@ ggplot(serie_prec, aes(x = mes, y = precip_mm, color = region)) +
 
 
 ```{r Preparar}
-# Descargar serie temporal para la caja envolvente (puedes ajustar la resolución)
+# Descargar serie temporal para la caja envolvente
 chirps_data <- get_chirps(
   lat = mean(c(bounding_rect["ymin"], bounding_rect["ymax"])),
   lon = mean(c(bounding_rect["xmin"], bounding_rect["xmax"])),
