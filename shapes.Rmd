@@ -10,6 +10,7 @@ library(sf)
 
 # Visualización temática de datos espaciales (mapas estáticos y dinámicos)
 library(tmap)
+tmap_mode("plot")
 
 # Manipulación y transformación de datos (data frames y tibbles)
 library(dplyr)
@@ -25,10 +26,6 @@ library(chirps)
 
 # Tratamiento de fechas
 library(lubridate)
-
-# Imágenes estáticas para gráficos
-library(tmap)
-tmap_mode("plot")
 
 # Paletas de colores para gráficos
 library(RColorBrewer)
