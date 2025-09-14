@@ -166,33 +166,38 @@ resumen_coords_santos <-
 # Descargar información CHIRPS región Norte
 lista_anual_norte <- list()
 
-for (x_anno in 1:21) {
-  lista_anual_norte[[x_anno]] <-
-    get_chirps(resumen_coords_norte %>% select(lon, lat),
+for (x_anno in 0:24) {
+  lista_anual_norte[[x_anno+1]] <-
+    get_chirps(
+      data.frame( lon = resumen_coords_norte$lon,
+                  lat = resumen_coords_norte$lat 
+                ),
       dates = c(
-        paste0(x_anno + 2004 - 1, "-01-01"),
-        paste0(x_anno + 2004 - 1, "-12-31")
+        paste0(x_anno + 2000,"-01-01"),
+        paste0(x_anno + 2000,"-12-31")
       ),
       server = "ClimateSERV"
     )
 }
-names(lista_anual_norte) <- "2004":"2024"
+names(lista_anual_norte) <- "2000":"2024"
 
 # Descargar información CHIRPS región Los Santos
 lista_anual_santos <- list()
 
-for (x_anno in 1:21) {
-  lista_anual_santos[[x_anno]] <-
-    get_chirps(resumen_coords_santos %>% select(lon, lat),
+for (x_anno in 0:24) {
+  lista_anual_norte[[x_anno+1]] <-
+    get_chirps(
+      data.frame( lon = resumen_coords_santos$lon,
+                  lat = resumen_coords_santos$lat 
+                ),
       dates = c(
-        paste0(x_anno + 2004 - 1, "-01-01"),
-        paste0(x_anno + 2004 - 1, "-12-31")
+        paste0(x_anno + 2000,"-01-01"),
+        paste0(x_anno + 2000,"-12-31")
       ),
       server = "ClimateSERV"
     )
 }
-
-names(lista_anual_santos) <- "2004":"2024"
+names(lista_anual_santos) <- "2000":"2024"
 
 
 
