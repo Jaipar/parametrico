@@ -109,10 +109,10 @@ area_norte <-
 area_santos <-
   as.numeric(st_area(st_transform(cobertura_santos, 5367))) / 10000
 
-# Centroides de las fincas Norte
+# Calcular centroides de las fincas Norte
 centroides_norte <- st_centroid(cobertura_norte)
 
-# Centroides de las fincas Los Santos
+# Calcular centroides de las fincas Los Santos
 centroides_santos <- st_centroid(cobertura_santos)
 
 # Coordenadas de los centroides en fincas Norte
@@ -133,7 +133,7 @@ centroides_santos <-
   ) %>%
   mutate(area = area_santos)
 
-# Redondear al múltiplo de 0.05 más cercano (comparten misma resolución)
+# Redondear a múltiplos de 0.05 (por resolución) en fincas Norte
 centroides_norte <-
   centroides_norte %>%
   mutate(
@@ -141,12 +141,7 @@ centroides_norte <-
     lat_round = round(lat / 0.05) * 0.05
   )
 
-resumen_coords_norte <-
-  centroides_norte %>%
-  group_by(lon_round, lat_round) %>%
-  summarise(n_fincas = n(), area = sum(area), .groups = "drop") %>%
-  rename("lon" = 1, "lat" = 2)
-
+# Redondear a múltiplos de 0.05 (por resolución) en fincas Los Santos
 centroides_santos <-
   centroides_santos %>%
   mutate(
@@ -154,6 +149,14 @@ centroides_santos <-
     lat_round = round(lat / 0.05) * 0.05
   )
 
+# Resumen de coordenadas redondeadas en fincas Norte
+resumen_coords_norte <-
+  centroides_norte %>%
+  group_by(lon_round, lat_round) %>%
+  summarise(n_fincas = n(), area = sum(area), .groups = "drop") %>%
+  rename("lon" = 1, "lat" = 2)
+
+# Resumen de coordenadas redondeadas en fincas Los Santos
 resumen_coords_santos <-
   centroides_santos %>%
   group_by(lon_round, lat_round) %>%
@@ -161,46 +164,83 @@ resumen_coords_santos <-
   rename("lon" = 1, "lat" = 2)
 ```
 
+```{r Descargar}
+# Vector de años
+vector_annos <- 2000:2024
 
-```{r CHIRPS}
-# Descargar información CHIRPS región Norte
+# Lista para almacenar datos anuales CHIRPS región Norte
 lista_anual_norte <- list()
 
-for (x_anno in 0:24) {
-  lista_anual_norte[[x_anno+1]] <-
-    get_chirps(
-      data.frame( lon = resumen_coords_norte$lon,
-                  lat = resumen_coords_norte$lat 
-                ),
-      dates = c(
-        paste0(x_anno + 2000,"-01-01"),
-        paste0(x_anno + 2000,"-12-31")
-      ),
-      server = "ClimateSERV"
-    )
-}
-names(lista_anual_norte) <- "2000":"2024"
+# Descargar información CHIRPS región Norte
+for (i in seq_along(vector_annos)) {
+  message("Descargando año ", vector_annos[i], " para la región Norte")
 
-# Descargar información CHIRPS región Los Santos
+  # Descarga con manejo de errores
+  lista_anual_norte[[i]] <- tryCatch(
+    {
+      get_chirps(
+        data.frame(
+          lon = resumen_coords_norte$lon,
+          lat = resumen_coords_norte$lat
+        ),
+        dates = c(
+          paste0(vector_annos[i], "-01-01"),
+          paste0(vector_annos[i], "-12-31")
+        ),
+        server = "ClimateSERV"
+      )
+    },
+    error = function(e) {
+      message("⚠️ Error en año ", y, ": ", e$message)
+    }
+  )
+  # Pausa de 0.5 segundos entre descargas
+  # Evitar saturar el servidor ClimateSERV y reducir riesgo de bloqueos
+  Sys.sleep(0.5)
+}
+
+# Nombrar lista con años
+names(lista_anual_norte) <- as.character(vector_annos)
+
+
+# Lista para almacenar datos anuales CHIRPS región Los Santos
 lista_anual_santos <- list()
 
-for (x_anno in 0:24) {
-  lista_anual_norte[[x_anno+1]] <-
-    get_chirps(
-      data.frame( lon = resumen_coords_santos$lon,
-                  lat = resumen_coords_santos$lat 
-                ),
-      dates = c(
-        paste0(x_anno + 2000,"-01-01"),
-        paste0(x_anno + 2000,"-12-31")
-      ),
-      server = "ClimateSERV"
-    )
+# Descargar información CHIRPS región Los Santos
+for (i in seq_along(vector_annos)) {
+  message("Descargando año ", vector_annos[i], " para la región Los Santos")
+
+  # Descarga con manejo de errores
+  lista_anual_santos[[i]] <- tryCatch(
+    {
+      get_chirps(
+        data.frame(
+          lon = resumen_coords_santos$lon,
+          lat = resumen_coords_santos$lat
+        ),
+        dates = c(
+          paste0(vector_annos[i], "-01-01"),
+          paste0(vector_annos[i], "-12-31")
+        ),
+        server = "ClimateSERV"
+      )
+    },
+    error = function(e) {
+      message("⚠️ Error en año ", y, ": ", e$message)
+    }
+  )
+  # Pausa de 0.5 segundos entre descargas
+  # Evitar saturar el servidor ClimateSERV y reducir riesgo de bloqueos
+  Sys.sleep(0.5)
 }
-names(lista_anual_santos) <- "2000":"2024"
 
+names(lista_anual_santos) <- as.character(vector_annos)
 
+# Guardar listas con precipitaciones anuales
+save(lista_anual_norte, lista_anual_santos, file = "precipitaciones.RData")
+```
 
+```{r Visualizar}
 leaflet(grids_santos) %>%
   addProviderTiles("CartoDB.Positron") %>%
   addPolygons(
