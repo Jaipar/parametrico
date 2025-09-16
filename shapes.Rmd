@@ -164,109 +164,130 @@ resumen_coords_santos <-
   rename("lon" = 1, "lat" = 2)
 ```
 
-```{r Descargar}
-# Vector de años
-vector_annos <- 2000:2024
-
-# Lista para almacenar datos anuales CHIRPS región Norte
-lista_anual_norte <- list()
-
-# Descargar información CHIRPS región Norte
-for (i in seq_along(vector_annos)) {
-  message("Descargando año ", vector_annos[i], " para la región Norte")
-
-  # Descarga con manejo de errores
-  lista_anual_norte[[i]] <- tryCatch(
-    {
-      get_chirps(
-        data.frame(
-          lon = resumen_coords_norte$lon,
-          lat = resumen_coords_norte$lat
-        ),
-        dates = c(
-          paste0(vector_annos[i], "-01-01"),
-          paste0(vector_annos[i], "-12-31")
-        ),
-        server = "ClimateSERV"
-      )
-    },
-    error = function(e) {
-      message("⚠️ Error en año ", y, ": ", e$message)
-    }
-  )
-  # Pausa de 0.5 segundos entre descargas
-  # Evitar saturar el servidor ClimateSERV y reducir riesgo de bloqueos
-  Sys.sleep(0.5)
-}
-
-# Nombrar lista con años
-names(lista_anual_norte) <- as.character(vector_annos)
-
-
-# Lista para almacenar datos anuales CHIRPS región Los Santos
-lista_anual_santos <- list()
-
-# Descargar información CHIRPS región Los Santos
-for (i in seq_along(vector_annos)) {
-  message("Descargando año ", vector_annos[i], " para la región Los Santos")
-
-  # Descarga con manejo de errores
-  lista_anual_santos[[i]] <- tryCatch(
-    {
-      get_chirps(
-        data.frame(
-          lon = resumen_coords_santos$lon,
-          lat = resumen_coords_santos$lat
-        ),
-        dates = c(
-          paste0(vector_annos[i], "-01-01"),
-          paste0(vector_annos[i], "-12-31")
-        ),
-        server = "ClimateSERV"
-      )
-    },
-    error = function(e) {
-      message("⚠️ Error en año ", y, ": ", e$message)
-    }
-  )
-  # Pausa de 0.5 segundos entre descargas
-  # Evitar saturar el servidor ClimateSERV y reducir riesgo de bloqueos
-  Sys.sleep(0.5)
-}
-
-names(lista_anual_santos) <- as.character(vector_annos)
-
-# Guardar listas con precipitaciones anuales
-save(lista_anual_norte, lista_anual_santos, file = "precipitaciones.RData")
-```
-
-```{r Visualizar}
-leaflet(grids_santos) %>%
+```{r Visualizar1}
+# Visualizar región Norte sobre mapa de Costa Rica
+leaflet() %>%
   addProviderTiles("CartoDB.Positron") %>%
   addPolygons(
-    fillColor = "orange",
-    fillOpacity = 0.6,
-    color = "black",
-    weight = 1,
-    label = ~ paste(n_fincas, "fincas")
+    data = region_norte,
+    fillColor = "green",
+    fillOpacity = 0.4,
+    color = "black"
   )
 
+# Visualizar región Los Santos sobre mapa de Costa Rica
+leaflet() %>%
+  addProviderTiles("CartoDB.Positron") %>%
+  addPolygons(
+    data = region_santos,
+    fillColor = "green",
+    fillOpacity = 0.4,
+    color = "black"
+  )
+```
 
+```{r Descargar, eval=FALSE}
+# Opción para descargar datos (TRUE) o cargar datos guardados (FALSE)
+# Descargar datos puede tardar varias horas
+descargar_datos <- FALSE
 
+if (!descargar_datos) {
+  load("precipitaciones.RData")
+} else {
+  # Vector de años
+  vector_annos <- 2000:2024
 
-precipitaciones <- get_chirps(resumen_coords,
-  dates = c("2022-01-01", "2022-12-31"),
-  server = "ClimateSERV"
-)
+  # Lista para almacenar datos anuales CHIRPS región Norte
+  lista_anual_norte <- list()
 
+  # Descargar información CHIRPS región Norte
+  for (i in seq_along(vector_annos)) {
+    message("Descargando año ", vector_annos[i], " para la región Norte")
+
+    # Descarga con manejo de errores
+    lista_anual_norte[[i]] <- tryCatch(
+      {
+        get_chirps(
+          data.frame(
+            lon = resumen_coords_norte$lon,
+            lat = resumen_coords_norte$lat
+          ),
+          dates = c(
+            paste0(vector_annos[i], "-01-01"),
+            paste0(vector_annos[i], "-12-31")
+          ),
+          server = "ClimateSERV"
+        )
+      },
+      error = function(e) {
+        message("⚠️ Error en año ", vector_annos[i], ": ", e$message)
+      }
+    )
+    # Pausa de 0.5 segundos entre descargas
+    # Evitar saturar el servidor ClimateSERV y reducir riesgo de bloqueos
+    Sys.sleep(0.5)
+  }
+
+  # Lista para almacenar datos anuales CHIRPS región Los Santos
+  lista_anual_santos <- list()
+
+  # Descargar información CHIRPS región Los Santos
+  for (i in seq_along(vector_annos)) {
+    message("Descargando año ", vector_annos[i], " para la región Los Santos")
+
+    # Descarga con manejo de errores
+    lista_anual_santos[[i]] <- tryCatch(
+      {
+        get_chirps(
+          data.frame(
+            lon = resumen_coords_santos$lon,
+            lat = resumen_coords_santos$lat
+          ),
+          dates = c(
+            paste0(vector_annos[i], "-01-01"),
+            paste0(vector_annos[i], "-12-31")
+          ),
+          server = "ClimateSERV"
+        )
+      },
+      error = function(e) {
+        message("⚠️ Error en año ", vector_annos[i], ": ", e$message)
+      }
+    )
+    # Pausa de 0.5 segundos entre descargas
+    # Evitar saturar el servidor ClimateSERV y reducir riesgo de bloqueos
+    Sys.sleep(0.5)
+  }
+
+  # Nombrar lista con años
+  names(lista_anual_norte) <- as.character(vector_annos)
+  names(lista_anual_santos) <- as.character(vector_annos)
+
+  # Guardar listas con precipitaciones anuales
+  save(lista_anual_norte, lista_anual_santos, file = "precipitaciones.RData")
+
+  # Liberar contador de memoria
+  rm(i, vector_annos)
+  gc()
+}
+```
+
+```{r Visualizar2}
+# Unir todas las tablas de la lista en un solo data frame
+precipitaciones <-
+  bind_rows(lista_anual_norte, .id = "year") %>%
+  bind_rows(bind_rows(lista_anual_santos, .id = "year")) %>%
+  select(-"id")
+
+# Promedio de precipitaciones diarias por pixel.
 precipitaciones %>%
   group_by(lat, lon) %>%
-  summarise(total_precip = sum(chirps, na.rm = TRUE), .groups = "drop")
+  summarise(precip_diarias = mean(chirps, na.rm = TRUE), .groups = "drop")
 
-
+# Gráfico: Promedio de precipitaciones diarias por pixel.
 precipitaciones %>%
   group_by(lat, lon) %>%
-  summarise(total_precip = sum(chirps, na.rm = TRUE), .groups = "drop") %>%
+  summarise(precip_diarias = mean(chirps, na.rm = TRUE), .groups = "drop") %>%
   leaflet() %>%
   addProviderTiles("CartoDB.Positron") %>%
   addCircles(
@@ -274,30 +295,47 @@ precipitaciones %>%
     lat = ~lat,
     weight = 1,
     radius = 1000,
-    color = ~ colorNumeric("YlGnBu", total_precip)(total_precip),
+    color = ~ colorNumeric("YlGnBu", precip_diarias)(precip_diarias),
     fillOpacity = 0.7,
-    label = ~ paste("Precipitación total:", round(total_precip, 2), "mm")
+    label = ~ paste("Precipitación diaria:", round(precip_diarias, 2), "mm")
   )
 
-leaflet() %>%
-  addTiles() %>%
-  addPolygons(data = rectangulo_santos2, color = "blue", fillOpacity = 0.05) %>%
-  addPolygons(data = cobertura_santos, color = "green", fillOpacity = 0.3)
+# Promedio de precipitaciones anuales por pixel.
+precipitaciones %>%
+  group_by(lat, lon, year) %>%
+  summarise(precip_anuales = sum(chirps, na.rm = TRUE), .groups = "drop") %>%
+  group_by(lat, lon) %>%
+  summarise(promedio = mean(precip_anuales, na.rm = TRUE), .groups = "drop")
 
+# Gráfico: Promedio de precipitaciones anuales por pixel.
+precipitaciones %>%
+  group_by(lat, lon, year) %>%
+  summarise(chirps = sum(chirps, na.rm = TRUE), .groups = "drop") %>%
+  group_by(lat, lon) %>%
+  summarise(precip_anual = mean(chirps, na.rm = TRUE), .groups = "drop") %>%
+  leaflet() %>%
+  addProviderTiles("CartoDB.Positron") %>%
+  addCircles(
+    lng = ~lon,
+    lat = ~lat,
+    weight = 1,
+    radius = 1000,
+    color = ~ colorNumeric("YlGnBu", precip_anual)(precip_anual),
+    fillOpacity = 0.7,
+    label = ~ paste("Promedio anual:", round(precip_anual, 2), "mm")
+  )
 
+# Visualizar cobertura cafetalera y rectángulo envolvente de región Norte
 leaflet() %>%
   addTiles() %>%
   addPolygons(data = rectangulo_norte2, color = "blue", fillOpacity = 0.05) %>%
   addPolygons(data = cobertura_norte, color = "green", fillOpacity = 0.3)
 
+# Visualizar cobertura cafetalera y rectángulo envolvente de región Los Santos
 leaflet() %>%
-  addProviderTiles("CartoDB.Positron") %>%
-  addPolygons(
-    data = fincas_santos,
-    fillColor = "green",
-    fillOpacity = 0.4,
-    color = "black"
-  )
+  addTiles() %>%
+  addPolygons(data = rectangulo_santos2, color = "blue", fillOpacity = 0.05) %>%
+  addPolygons(data = cobertura_santos, color = "green", fillOpacity = 0.3)
 ```
 
 ```{r Promedios}
@@ -654,11 +692,6 @@ r1 %>%
   group_by(date) %>%
   summarise(restas = first(chirps) - last(chirps), .groups = "drop") %>%
   summarise(cero = sum(restas))
-```
-
-```{r}
-trunc(c(-55.051, -55.049) / 0.05) * 0.05
-round(c(-55.051, -55.049) / 0.05) * 0.05
 ```
 
 
