@@ -217,11 +217,11 @@ leaflet() %>%
   )
 
 # Umbrales de elevación (m)
-bins_altura <- c(0, 200, 400, 600, 800, 1000, Inf)
+bins_altura <- c(0, 500, 1000, 2000, 3000, Inf)
 
 # Colores para umbrales de elevación
-colores_altura <- c("#006400", "#66CC66", "#FFFF66",
-                    "#CD853F", "#8B4513", "#d9d9d9")
+colores_altura <- c("#C8E6A7", "#FFF176", "#66BB6A",
+                    "#D9884E", "#8B4513", "#9b5de5")
 
 # Paleta de colores para elevación
 pal_altura <- colorBin(
@@ -230,58 +230,87 @@ pal_altura <- colorBin(
   bins    = bins_altura
 )
 
-resumen_coords_norte$elev_cat <- cut(
-  resumen_coords_norte$elevation,
-  breaks = bins_altura,
-  include.lowest = TRUE,
-  labels = c("0-200", "200-400", "400-600", "600-800", "800-1000", ">1000")
-)
-
-resumen_coords_norte %>% 
-  mutate()
-
-
-
-
-ggplot() +
-  geom_tile(aes(x = lon, y = lat, fill = elev_cat)) +
-  scale_fill_manual(values = colores_estandar, drop = FALSE) +
+# Grafico de elevación en la región Norte (ggplot2)
+resumen_coords_norte %>%
+  mutate(
+    elev_cat = cut(
+      elevation,
+      breaks = bins_altura,
+      include.lowest = TRUE,
+      labels = c("0-500", "500-1000", "1000-2000", "2000-3000", ">3000")
+    )
+  ) %>%
+  ggplot() +
+  geom_tile(aes(x = lon, y = lat, fill = elev_cat),
+            color = "black", linewidth = 0.5) +
+  scale_fill_manual(values = colores_altura, drop = FALSE) +
   coord_equal() +
   labs(
-    title = "Elevación aproximada en la región Norte",
+    title = "Elevación en la región Norte",
     x = "Longitud",
     y = "Latitud",
     fill = "Elevación (m)"
   ) +
   theme_minimal()
 
-
-ggplot(resumen_coords_norte) +
-  geom_tile(aes(x = lon, y = lat, fill = elevation)) +
-  scale_fill_distiller(palette = "Spectral", direction = -1) +
-  coord_equal() + # para que x/y tengan la misma escala
+# Grafico de elevación en la región Los Santos (ggplot2)
+resumen_coords_santos %>%
+  mutate(
+    elev_cat = cut(
+      elevation,
+      breaks = bins_altura,
+      include.lowest = TRUE,
+      labels = c("0-500", "500-1000", "1000-2000", "2000-3000", ">3000")
+    )
+  ) %>%
+  ggplot() +
+  geom_tile(aes(x = lon, y = lat, fill = elev_cat),
+            color = "black", linewidth = 0.5) +
+  scale_fill_manual(values = colores_altura, drop = FALSE) +
+  coord_equal() +
   labs(
-    title = "Elevación aproximada en la región Norte",
+    title = "Elevación en la región Los Santos",
     x = "Longitud",
     y = "Latitud",
     fill = "Elevación (m)"
   ) +
   theme_minimal()
 
+# Grafico de elevación en la región Norte (leaflet)
 leaflet(resumen_coords_norte) %>%
-  addTiles() %>%
+  addProviderTiles("CartoDB.Positron") %>%
   addRectangles(
-    lng1 = ~ lon - 0.05 / 2, lat1 = ~ lat - 0.05 / 2, # esquina inferior izquierda
-    lng2 = ~ lon + 0.05 / 2, lat2 = ~ lat + 0.05 / 2, # esquina superior derecha
-    fillColor = ~ pal(elevation),
-    color = NA, # sin borde
+    lng1 = ~ lon - 0.05 / 2, lat1 = ~ lat - 0.05 / 2,
+    lng2 = ~ lon + 0.05 / 2, lat2 = ~ lat + 0.05 / 2,
+    fillColor = ~ pal_altura(elevation),
+    color = "black",
+    weight = 0.5,
     fillOpacity = 0.8,
     popup = ~ paste0("Elevación: ", round(elevation, 1), " m")
   ) %>%
   addLegend(
     position = "bottomright",
-    pal = pal,
-    values = bins_mapa,
+    pal = pal_altura,
+    values = bins_altura,
+    title = "Elevación (m)"
+  )
+
+# Grafico de elevación en la región Los Santos (leaflet)
+leaflet(resumen_coords_santos) %>%
+  addProviderTiles("CartoDB.Positron") %>%
+  addRectangles(
+    lng1 = ~ lon - 0.05 / 2, lat1 = ~ lat - 0.05 / 2,
+    lng2 = ~ lon + 0.05 / 2, lat2 = ~ lat + 0.05 / 2,
+    fillColor = ~ pal_altura(elevation),
+    color = "black",
+    weight = 0.5,
+    fillOpacity = 0.8,
+    popup = ~ paste0("Elevación: ", round(elevation, 1), " m")
+  ) %>%
+  addLegend(
+    position = "bottomright",
+    pal = pal_altura,
+    values = bins_altura,
     title = "Elevación (m)"
   )
 ```
@@ -372,43 +401,6 @@ if (!descargar_datos) {
 }
 ```
 
-```{r Altura}
-
-
-# Descargar datos de elevación (SRTM) para la caja envolvente
-bounding_rect <- st_bbox(st_union(cobertura_norte, cobertura_santos))
-elevacion <- get_srtm(
-  lat = mean(c(bounding_rect["ymin"], bounding_rect["ymax"])),
-  lon = mean(c(bounding_rect["xmin"], bounding_rect["xmax"])),
-  as.matrix = FALSE
-)
-# Filtrar elevación para la caja envolvente
-elevacion <- elevacion[
-  st_within(elevacion, st_as_sfc(bounding_rect), sparse = FALSE)[, 1],
-]
-# Visualizar elevación con mapa interactivo
-leaflet() %>%
-  addProviderTiles("CartoDB.Positron") %>%
-  addCircles(
-    data = elevacion,
-    lng = ~ lon,
-    lat = ~ lat,
-    weight = 1,
-    radius = 500,
-    color = ~ colorNumeric("YlGnBu", elev)(elev),
-    fillOpacity = 0.7,
-    label = ~ paste("Elevación:", round(elev, 2), "m")
-  ) %>%
-  addLegend(
-    "bottomright",
-    pal = colorNumeric("YlGnBu", domain = elevacion$elev),
-    values = elevacion$elev,
-    title = "Elevación (m)"
-  )
-
-```
-
-
 ```{r Visualizar2}
 # Unir todas las tablas de la lista en un solo data frame
 precipitaciones <-
@@ -421,12 +413,33 @@ precipitaciones %>%
   group_by(lat, lon) %>%
   summarise(precip_diarias = mean(chirps, na.rm = TRUE), .groups = "drop")
 
+# Paleta de color para precipitaciones diarias
+pal_generica <- colorNumeric("YlGnBu", domain = c(0, 15))
+
 # Gráfico: Promedio de precipitaciones diarias por pixel.
 precipitaciones %>%
   group_by(lat, lon) %>%
   summarise(precip_diarias = mean(chirps, na.rm = TRUE), .groups = "drop") %>%
   leaflet() %>%
   addProviderTiles("CartoDB.Positron") %>%
+  addRectangles(
+    lng1 = ~ lon - 0.05 / 2, lat1 = ~ lat - 0.05 / 2,
+    lng2 = ~ lon + 0.05 / 2, lat2 = ~ lat + 0.05 / 2,
+    fillColor = ~ pal_generica(precip_diarias),
+    color = "black",
+    weight = 0.5,
+    fillOpacity = 0.8,
+    label = ~ paste("Precipitación diaria:", round(precip_diarias, 2), "mm")
+  ) %>%
+  addLegend(
+    "bottomright",            # posición de la leyenda
+    pal = pal,                # misma paleta
+    values = ~ precip_diarias, # valores para la leyenda
+    title = "Precipitación diaria (mm)",
+    opacity = 0.8
+  )
+
+
   addCircles(
     lng = ~lon,
     lat = ~lat,
