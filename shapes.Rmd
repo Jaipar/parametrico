@@ -24,6 +24,9 @@ library(ggplot2)
 # Enlace con servidores CHIRPS
 library(chirps)
 
+# Consultar elevación puntual
+library(elevatr)
+
 # Tratamiento de fechas
 library(lubridate)
 
@@ -103,12 +106,14 @@ rectangulo_santos2 <- st_as_sfc(rectangulo_santos)
 
 # Área en hectáreas de las fincas Norte
 area_norte <-
-  as.numeric(st_area(st_transform(cobertura_norte, 5367))) / 10000
+  as.numeric(st_area(st_transform(cobertura_norte, crs = 5367))) / 10000
 
 # Área en hectáreas de las fincas Los Santos
 area_santos <-
-  as.numeric(st_area(st_transform(cobertura_santos, 5367))) / 10000
+  as.numeric(st_area(st_transform(cobertura_santos, crs = 5367))) / 10000
+```
 
+```{r Centroides}
 # Calcular centroides de las fincas Norte
 centroides_norte <- st_centroid(cobertura_norte)
 
@@ -162,10 +167,36 @@ resumen_coords_santos <-
   group_by(lon_round, lat_round) %>%
   summarise(n_fincas = n(), area = sum(area), .groups = "drop") %>%
   rename("lon" = 1, "lat" = 2)
+
+# Descargar la elevación de cada punto de centroides_norte
+# Usando servicio de elevación de AWS
+# Resolución aproximada de 5km metros (zoom 5)
+resumen_coords_norte <-
+  get_elev_point(
+    st_as_sf(
+      st_drop_geometry(resumen_coords_norte),
+      coords = c("lon", "lat"),
+      crs = 4326, remove = FALSE
+    ),
+    src = "aws", z = 5
+  )
+
+# Descargar la elevación de cada punto de centroides_santos
+# Usando servicio de elevación de AWS
+# Resolución aproximada de 5km metros (zoom 5)
+resumen_coords_santos <-
+  get_elev_point(
+    st_as_sf(
+      st_drop_geometry(resumen_coords_santos),
+      coords = c("lon", "lat"),
+      crs = 4326, remove = FALSE
+    ),
+    src = "aws", z = 5
+  )
 ```
 
 ```{r Visualizar1}
-# Visualizar región Norte sobre mapa de Costa Rica
+# Visualizar la región Norte sobre mapa de Costa Rica
 leaflet() %>%
   addProviderTiles("CartoDB.Positron") %>%
   addPolygons(
@@ -175,7 +206,7 @@ leaflet() %>%
     color = "black"
   )
 
-# Visualizar región Los Santos sobre mapa de Costa Rica
+# Visualizar la región Los Santos sobre mapa de Costa Rica
 leaflet() %>%
   addProviderTiles("CartoDB.Positron") %>%
   addPolygons(
@@ -183,6 +214,75 @@ leaflet() %>%
     fillColor = "green",
     fillOpacity = 0.4,
     color = "black"
+  )
+
+# Umbrales de elevación (m)
+bins_altura <- c(0, 200, 400, 600, 800, 1000, Inf)
+
+# Colores para umbrales de elevación
+colores_altura <- c("#006400", "#66CC66", "#FFFF66",
+                    "#CD853F", "#8B4513", "#d9d9d9")
+
+# Paleta de colores para elevación
+pal_altura <- colorBin(
+  palette = colores_altura,
+  domain  = bins_altura,
+  bins    = bins_altura
+)
+
+resumen_coords_norte$elev_cat <- cut(
+  resumen_coords_norte$elevation,
+  breaks = bins_altura,
+  include.lowest = TRUE,
+  labels = c("0-200", "200-400", "400-600", "600-800", "800-1000", ">1000")
+)
+
+resumen_coords_norte %>% 
+  mutate()
+
+
+
+
+ggplot() +
+  geom_tile(aes(x = lon, y = lat, fill = elev_cat)) +
+  scale_fill_manual(values = colores_estandar, drop = FALSE) +
+  coord_equal() +
+  labs(
+    title = "Elevación aproximada en la región Norte",
+    x = "Longitud",
+    y = "Latitud",
+    fill = "Elevación (m)"
+  ) +
+  theme_minimal()
+
+
+ggplot(resumen_coords_norte) +
+  geom_tile(aes(x = lon, y = lat, fill = elevation)) +
+  scale_fill_distiller(palette = "Spectral", direction = -1) +
+  coord_equal() + # para que x/y tengan la misma escala
+  labs(
+    title = "Elevación aproximada en la región Norte",
+    x = "Longitud",
+    y = "Latitud",
+    fill = "Elevación (m)"
+  ) +
+  theme_minimal()
+
+leaflet(resumen_coords_norte) %>%
+  addTiles() %>%
+  addRectangles(
+    lng1 = ~ lon - 0.05 / 2, lat1 = ~ lat - 0.05 / 2, # esquina inferior izquierda
+    lng2 = ~ lon + 0.05 / 2, lat2 = ~ lat + 0.05 / 2, # esquina superior derecha
+    fillColor = ~ pal(elevation),
+    color = NA, # sin borde
+    fillOpacity = 0.8,
+    popup = ~ paste0("Elevación: ", round(elevation, 1), " m")
+  ) %>%
+  addLegend(
+    position = "bottomright",
+    pal = pal,
+    values = bins_mapa,
+    title = "Elevación (m)"
   )
 ```
 
@@ -271,6 +371,43 @@ if (!descargar_datos) {
   gc()
 }
 ```
+
+```{r Altura}
+
+
+# Descargar datos de elevación (SRTM) para la caja envolvente
+bounding_rect <- st_bbox(st_union(cobertura_norte, cobertura_santos))
+elevacion <- get_srtm(
+  lat = mean(c(bounding_rect["ymin"], bounding_rect["ymax"])),
+  lon = mean(c(bounding_rect["xmin"], bounding_rect["xmax"])),
+  as.matrix = FALSE
+)
+# Filtrar elevación para la caja envolvente
+elevacion <- elevacion[
+  st_within(elevacion, st_as_sfc(bounding_rect), sparse = FALSE)[, 1],
+]
+# Visualizar elevación con mapa interactivo
+leaflet() %>%
+  addProviderTiles("CartoDB.Positron") %>%
+  addCircles(
+    data = elevacion,
+    lng = ~ lon,
+    lat = ~ lat,
+    weight = 1,
+    radius = 500,
+    color = ~ colorNumeric("YlGnBu", elev)(elev),
+    fillOpacity = 0.7,
+    label = ~ paste("Elevación:", round(elev, 2), "m")
+  ) %>%
+  addLegend(
+    "bottomright",
+    pal = colorNumeric("YlGnBu", domain = elevacion$elev),
+    values = elevacion$elev,
+    title = "Elevación (m)"
+  )
+
+```
+
 
 ```{r Visualizar2}
 # Unir todas las tablas de la lista en un solo data frame
