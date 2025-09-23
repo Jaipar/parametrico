@@ -220,7 +220,7 @@ leaflet() %>%
 bins_altura <- c(0, 500, 1000, 2000, 3000, Inf)
 
 # Colores para umbrales de elevación
-colores_altura <- c("#C8E6A7", "#FFF176", "#66BB6A",
+colores_altura <- c("#C8E6A7", "#FFF176",
                     "#D9884E", "#8B4513", "#9b5de5")
 
 # Paleta de colores para elevación
@@ -253,6 +253,25 @@ resumen_coords_norte %>%
   ) +
   theme_minimal()
 
+# Grafico de elevación en la región Norte (leaflet)
+leaflet(resumen_coords_norte) %>%
+  addProviderTiles("CartoDB.Positron") %>%
+  addRectangles(
+    lng1 = ~ lon - 0.05 / 2, lat1 = ~ lat - 0.05 / 2,
+    lng2 = ~ lon + 0.05 / 2, lat2 = ~ lat + 0.05 / 2,
+    fillColor = ~ pal_altura(elevation),
+    color = "black",
+    weight = 0.5,
+    fillOpacity = 0.8,
+    popup = ~ paste0("Elevación: ", round(elevation, 1), " m")
+  ) %>%
+  addLegend(
+    position = "bottomright",
+    pal = pal_altura,
+    values = bins_altura,
+    title = "Elevación (m)"
+  )
+
 # Grafico de elevación en la región Los Santos (ggplot2)
 resumen_coords_santos %>%
   mutate(
@@ -275,25 +294,6 @@ resumen_coords_santos %>%
     fill = "Elevación (m)"
   ) +
   theme_minimal()
-
-# Grafico de elevación en la región Norte (leaflet)
-leaflet(resumen_coords_norte) %>%
-  addProviderTiles("CartoDB.Positron") %>%
-  addRectangles(
-    lng1 = ~ lon - 0.05 / 2, lat1 = ~ lat - 0.05 / 2,
-    lng2 = ~ lon + 0.05 / 2, lat2 = ~ lat + 0.05 / 2,
-    fillColor = ~ pal_altura(elevation),
-    color = "black",
-    weight = 0.5,
-    fillOpacity = 0.8,
-    popup = ~ paste0("Elevación: ", round(elevation, 1), " m")
-  ) %>%
-  addLegend(
-    position = "bottomright",
-    pal = pal_altura,
-    values = bins_altura,
-    title = "Elevación (m)"
-  )
 
 # Grafico de elevación en la región Los Santos (leaflet)
 leaflet(resumen_coords_santos) %>%
@@ -818,7 +818,7 @@ leaflet() %>%
 ```
 
 
-```{r graphs serie}
+```{r graphs serie, fig.width=10, fig.height=6}
 # Gráfico de serie de tiempo
 pixel_norte <- resumen_coords_norte %>% slice_max(area, n = 1)
 pixel_santos <- resumen_coords_santos %>% slice_max(area, n = 1)
@@ -848,11 +848,4 @@ ggplot(serie_prec, aes(x = mes, y = precip_mm, color = region)) +
   labs(x = "Fecha", y = "Precipitación (mm)", color = "Región") +
   theme_minimal()
 ```
-
-
-
-
-```{r Preparar}
-```
-
 
