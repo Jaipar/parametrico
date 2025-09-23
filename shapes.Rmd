@@ -818,7 +818,7 @@ leaflet() %>%
 ```
 
 
-```{r graphs serie, fig.width=10, fig.height=6}
+```{r graphs serie}
 # Gráfico de serie de tiempo
 pixel_norte <- resumen_coords_norte %>% slice_max(area, n = 1)
 pixel_santos <- resumen_coords_santos %>% slice_max(area, n = 1)
