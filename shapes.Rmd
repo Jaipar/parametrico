@@ -220,8 +220,7 @@ leaflet() %>%
 bins_altura <- c(0, 500, 1000, 2000, 3000, Inf)
 
 # Colores para umbrales de elevación
-colores_altura <- c("#C8E6A7", "#FFF176",
-                    "#D9884E", "#8B4513", "#9b5de5")
+colores_altura <- c("#C8E6A7", "#FFF176", "#D9884E", "#8B4513", "#9b5de5")
 
 # Paleta de colores para elevación
 pal_altura <- colorBin(
@@ -414,70 +413,6 @@ precipitaciones_santos <-
 # Unir todas las tablas de la lista en un solo data frame
 precipitaciones <- bind_rows(precipitaciones_norte, precipitaciones_santos)
 
-# Promedio de precipitaciones diarias por pixel.
-precipitaciones %>%
-  group_by(lat, lon) %>%
-  summarise(precip_diarias = mean(chirps, na.rm = TRUE), .groups = "drop")
-
-# Paleta de color para precipitaciones diarias
-pal_generica <- colorNumeric("YlGnBu", domain = c(0, 15))
-
-# Gráfico: Promedio de precipitaciones diarias por pixel.
-precipitaciones %>%
-  group_by(lat, lon) %>%
-  summarise(precip_diarias = mean(chirps, na.rm = TRUE), .groups = "drop") %>%
-  leaflet() %>%
-  addProviderTiles("CartoDB.Positron") %>%
-  addRectangles(
-    lng1 = ~ lon - 0.05 / 2, lat1 = ~ lat - 0.05 / 2,
-    lng2 = ~ lon + 0.05 / 2, lat2 = ~ lat + 0.05 / 2,
-    fillColor = ~ pal_generica(precip_diarias),
-    color = "black",
-    weight = 0.5,
-    fillOpacity = 0.8,
-    label = ~ paste("Precipitación diaria:", round(precip_diarias, 2), "mm")
-  ) %>%
-  addLegend(
-    "bottomright",
-    pal = pal_generica,
-    values = ~ c(0, 15),
-    title = "Precipitación diaria (mm)"
-  )
-
-# Promedio de precipitaciones anuales por pixel.
-precipitaciones %>%
-  group_by(lat, lon, year) %>%
-  summarise(precip_anuales = sum(chirps, na.rm = TRUE), .groups = "drop") %>%
-  group_by(lat, lon) %>%
-  summarise(promedio = mean(precip_anuales, na.rm = TRUE), .groups = "drop")
-
-# Paleta de color para precipitaciones diarias
-pal_generica <- colorNumeric("YlGnBu", domain = c(0, 6000))
-
-# Gráfico: Promedio de precipitaciones anuales por pixel.
-precipitaciones %>%
-  group_by(lat, lon, year) %>%
-  summarise(chirps = sum(chirps, na.rm = TRUE), .groups = "drop") %>%
-  group_by(lat, lon) %>%
-  summarise(precip_anual = mean(chirps, na.rm = TRUE), .groups = "drop") %>%
-  leaflet() %>%
-  addProviderTiles("CartoDB.Positron") %>%
-  addRectangles(
-    lng1 = ~ lon - 0.05 / 2, lat1 = ~ lat - 0.05 / 2,
-    lng2 = ~ lon + 0.05 / 2, lat2 = ~ lat + 0.05 / 2,
-    fillColor = ~ pal_generica(precip_anual),
-    color = "black",
-    weight = 0.5,
-    fillOpacity = 0.8,
-    label = ~ paste("Precipitación anual:", round(precip_anual, 2), "mm")
-  ) %>%
-  addLegend(
-    "bottomright",
-    pal = pal_generica,
-    values = ~ c(0, 6000),
-    title = "Precipitación anual (mm)"
-  )
-
 # Visualizar cobertura cafetalera y rectángulo envolvente de región Norte
 leaflet() %>%
   addTiles() %>%
@@ -509,30 +444,12 @@ if (cargar_datos) {
 }
 ```
 
-```{r Comprobaciones}
-
-
-```
-
-
-
-
-
 ```{r Promedios}
-# Precipitación promedio anual por píxel de cada región
-chirps_prom_norte <- precipitaciones_norte %>%
-  group_by(year, lon, lat) %>%
+# Promedio de precipitaciones anuales por pixel
+chirps_prom <- precipitaciones %>%
+  group_by(region, lon, lat, year) %>%
   summarise(precip_anual = sum(chirps), .groups = "drop") %>%
-  group_by(lon, lat) %>%
-  summarise(
-    precip_anual_prom = mean(precip_anual, na.rm = TRUE),
-    .groups = "drop"
-  )
-
-chirps_prom_santos <- precipitaciones_santos %>%
-  group_by(year, lon, lat) %>%
-  summarise(precip_anual = sum(chirps), .groups = "drop") %>%
-  group_by(lon, lat) %>%
+  group_by(region, lon, lat) %>%
   summarise(
     precip_anual_prom = mean(precip_anual, na.rm = TRUE),
     .groups = "drop"
@@ -540,12 +457,179 @@ chirps_prom_santos <- precipitaciones_santos %>%
 
 # Unir datos para Norte
 resumen_coords_norte <- resumen_coords_norte %>%
-  left_join(chirps_prom_norte, by = c("lon", "lat"))
+  left_join(chirps_prom, by = c("lon", "lat"))
 
 # Unir datos para Los Santos
 resumen_coords_santos <- resumen_coords_santos %>%
-  left_join(chirps_prom_santos, by = c("lon", "lat"))
+  left_join(chirps_prom, by = c("lon", "lat"))
 
+# Unir resumen de coordenadas con precipitaciones promedio
+resumen_coords <- bind_rows(resumen_coords_norte, resumen_coords_santos)
+
+# Liberar memoria
+rm(chirps_prom, resumen_coords_norte, resumen_coords_santos)
+
+# Paleta de color para precipitaciones diarias
+pal_precipitaciones <- colorNumeric("YlGnBu", domain = c(0, 15))
+
+# Gráfico: Promedio de precipitaciones diarias por pixel
+precipitaciones %>%
+  group_by(lat, lon) %>%
+  summarise(precip_diarias = mean(chirps, na.rm = TRUE), .groups = "drop") %>%
+  leaflet() %>%
+  addProviderTiles("CartoDB.Positron") %>%
+  addRectangles(
+    lng1 = ~ lon - 0.05 / 2, lat1 = ~ lat - 0.05 / 2,
+    lng2 = ~ lon + 0.05 / 2, lat2 = ~ lat + 0.05 / 2,
+    fillColor = ~ pal_precipitaciones(precip_diarias),
+    color = "black",
+    weight = 0.5,
+    fillOpacity = 0.8,
+    label = ~ paste("Precipitación diaria:", round(precip_diarias, 2), "mm")
+  ) %>%
+  addLegend(
+    "bottomright",
+    pal = pal_precipitaciones,
+    values = ~ c(0, 15),
+    title = "Precipitación diaria (mm)"
+  )
+
+# Rango de precipitaciones anuales
+rng_precipitaciones <- c(0, 5000)
+
+# Paleta de color para precipitaciones anuales
+pal_precipitaciones <- colorNumeric("YlGnBu", domain = rng_precipitaciones)
+
+# Gráfico: Promedio de precipitaciones anuales por pixel
+resumen_coords %>%
+  leaflet() %>%
+  addProviderTiles("CartoDB.Positron") %>%
+  addRectangles(
+    lng1 = ~ lon - 0.05 / 2, lat1 = ~ lat - 0.05 / 2,
+    lng2 = ~ lon + 0.05 / 2, lat2 = ~ lat + 0.05 / 2,
+    fillColor = ~ pal_precipitaciones(precip_anual_prom),
+    color = "black",
+    weight = 0.5,
+    fillOpacity = 0.8,
+    label = ~ paste("Precipitación anual:", round(precip_anual_prom, 2), "mm")
+  ) %>%
+  addLegend(
+    "bottomright",
+    pal = pal_precipitaciones,
+    values = ~ rng_precipitaciones,
+    title = "Precipitación anual (mm)"
+  )
+
+# Gráfico: Precipitaciones, cobertura, área y número de fincas
+resumen_coords %>%
+  leaflet() %>%
+  addProviderTiles("CartoDB.Positron") %>%
+  addRectangles(
+    lng1 = ~ lon - 0.05 / 2, lat1 = ~ lat - 0.05 / 2,
+    lng2 = ~ lon + 0.05 / 2, lat2 = ~ lat + 0.05 / 2,
+    fillColor = ~ pal_precipitaciones(precip_anual_prom),
+    fillOpacity = 0.7,
+    color = "gray",
+    weight = 1,
+    label = ~ paste0(
+      "Lluvia: ", round(precip_anual_prom, 1), " mm\n",
+      "Área: ", round(area, 1), " ha\n",
+      "Fincas: ", n_fincas
+    )
+  ) %>%
+  addPolygons(
+    data = cobertura_norte,
+    fillColor = "green",
+    fillOpacity = 0.15,
+    color = "darkgreen",
+    weight = 1
+  ) %>%
+  addPolygons(
+    data = cobertura_santos,
+    fillColor = "green",
+    fillOpacity = 0.15,
+    color = "darkgreen",
+    weight = 1
+  ) %>%
+  addLegend(
+    "bottomright",
+    pal = pal_precipitaciones,
+    values = rng_precipitaciones,
+    title = "Precipitación anual promedio (mm)"
+  )
+
+# Grafico comparativo de precipitaciones anuales promedio entre regiones
+
+map_norte <-
+  resumen_coords %>%
+  rowwise() %>%
+  mutate(
+    geometry = list(
+      st_polygon(list(matrix(
+        c(
+          lon - 0.025, lat - 0.025,
+          lon + 0.025, lat - 0.025,
+          lon + 0.025, lat + 0.025,
+          lon - 0.025, lat + 0.025,
+          lon - 0.025, lat - 0.025
+        ),
+        ncol = 2,
+        byrow = TRUE
+      )))
+    )
+  ) %>%
+  ungroup() %>%
+  filter(region == "Norte") %>%
+  tm_shape() +
+  tm_polygons(
+    fill = "precip_anual_prom",
+    fill.scale = tm_scale(
+      values = "brewer.blues",
+      breaks = seq(rng_precipitaciones[1], rng_precipitaciones[2], 500)
+    ),
+    fill.legend = tm_legend(title = "Lluvia (mm)")
+  ) +
+  tm_borders(lwd = 0.5) +
+  tm_title("Región Norte")
+
+map_santos <-
+  resumen_coords %>%
+  rowwise() %>%
+  mutate(
+    geometry = list(
+      st_polygon(list(matrix(
+        c(
+          lon - 0.025, lat - 0.025,
+          lon + 0.025, lat - 0.025,
+          lon + 0.025, lat + 0.025,
+          lon - 0.025, lat + 0.025,
+          lon - 0.025, lat - 0.025
+        ),
+        ncol = 2,
+        byrow = TRUE
+      )))
+    )
+  ) %>%
+  ungroup() %>%
+  filter(region == "Los Santos") %>%
+  tm_shape() +
+  tm_polygons(
+    fill = "precip_anual_prom",
+    fill.scale = tm_scale(
+      values = "brewer.blues",
+      breaks = seq(rng_precipitaciones[1], rng_precipitaciones[2], 500)
+    ),
+    fill.legend = tm_legend(title = "Lluvia (mm)")
+  ) +
+  tm_borders(lwd = 0.5) +
+  tm_title("Los Santos")
+
+tmap_arrange(map_norte, map_santos, ncol = 2)
+
+
+```
+
+```{r graphs promedios}
 # Crear cuadriculas de las zonas cafetaleras
 grids_norte <-
   resumen_coords_norte %>%
@@ -588,9 +672,7 @@ grids_santos <-
   ) %>%
   ungroup() %>%
   st_as_sf(crs = 4326, sf_column_name = "geometry")
-```
 
-```{r graphs promedios}
 pal_comun <- colorNumeric(
   "Blues",
   domain = c(grids_santos$precip_anual_prom, grids_norte$precip_anual_prom)
@@ -601,32 +683,7 @@ rango_comun <- range(
   na.rm = TRUE
 )
 
-leaflet(grids_norte) %>%
-  addProviderTiles("CartoDB.Positron") %>%
-  addPolygons(
-    fillColor = ~ pal_comun(precip_anual_prom),
-    fillOpacity = 0.7,
-    color = "gray",
-    weight = 1,
-    label = ~ paste0(
-      "Lluvia: ", round(precip_anual_prom, 1), " mm\n",
-      "Área: ", round(area, 1), " ha\n",
-      "Fincas: ", n_fincas
-    )
-  ) %>%
-  addPolygons(
-    data = cobertura_norte,
-    fillColor = "green",
-    fillOpacity = 0.15,
-    color = "darkgreen",
-    weight = 1
-  ) %>%
-  addLegend(
-    "bottomright",
-    pal = pal_comun,
-    values = rango_comun,
-    title = "Precipitación anual promedio (mm)"
-  )
+
 
 leaflet(grids_santos) %>%
   addProviderTiles("CartoDB.Positron") %>%
@@ -655,33 +712,7 @@ leaflet(grids_santos) %>%
     title = "Precipitación anual promedio (mm)"
   )
 
-map_norte <- tm_shape(grids_norte) +
-  tm_polygons(
-    fill = "precip_anual_prom",
-    fill.scale = tm_scale(
-      values = "brewer.blues",
-      breaks = seq(1500, 4500, 500)
-    ),
-    fill.legend = tm_legend(title = "Lluvia (mm)")
-  ) +
-  tm_borders(lwd = 0.5) +
-  tm_title("Región Norte")
 
-map_santos <- tm_shape(grids_santos) +
-  tm_polygons(
-    fill = "precip_anual_prom",
-    fill.scale = tm_scale(
-      values = "brewer.blues",
-      breaks = seq(1500, 4500, 500)
-    ),
-    fill.legend = tm_legend(title = "Lluvia (mm)")
-  ) +
-  tm_borders(lwd = 0.5) +
-  tm_title("Región Los Santos")
-
-tmap_arrange(map_norte, ncol = 1)
-tmap_arrange(map_santos, ncol = 1)
-tmap_arrange(map_norte, map_santos, ncol = 2)
 ```
 
 ```{r graphs Norte}

@@ -1,5 +1,5 @@
 .Rhistory
 .Rproj.user/
-.RData
+*.RData
 *.html
 shapes_files/
