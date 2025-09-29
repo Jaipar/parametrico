@@ -470,7 +470,7 @@ rm(chirps_prom, resumen_coords_norte, resumen_coords_santos)
 # Paleta de color para precipitaciones diarias
 pal_precipitaciones <- colorNumeric("YlGnBu", domain = c(0, 15))
 
-# Gráfico: Promedio de precipitaciones diarias por pixel
+# Gráfico del promedio de precipitaciones diarias por pixel
 precipitaciones %>%
   group_by(lat, lon) %>%
   summarise(precip_diarias = mean(chirps, na.rm = TRUE), .groups = "drop") %>%
@@ -498,7 +498,7 @@ rango_precipitaciones <- c(0, 5000)
 # Paleta de color para precipitaciones anuales
 pal_precipitaciones <- colorNumeric("YlGnBu", domain = rango_precipitaciones)
 
-# Gráfico: Promedio de precipitaciones anuales por pixel
+# Gráfico del promedio de precipitaciones anuales por pixel
 resumen_coords %>%
   leaflet() %>%
   addProviderTiles("CartoDB.Positron") %>%
@@ -587,7 +587,7 @@ resumen_coords %>%
     title = "Precipitación anual promedio (mm)"
   )
 
-# Grafico: Mapa cuadrícula de precipitaciones anuales (Región Norte)
+# Grafico: Mapa cuadrícula de precipitaciones anuales (1 - Región Norte)
 map_norte <-
   resumen_coords %>%
   mutate_grid() %>%
@@ -604,7 +604,7 @@ map_norte <-
   tm_borders(lwd = 0.5) +
   tm_title("Región Norte")
 
-# Grafico: Mapa cuadrícula de precipitaciones anuales (Región Los Santos)
+# Grafico: Mapa cuadrícula de precipitaciones anuales (2 - Región Los Santos)
 map_santos <-
   resumen_coords %>%
   rowwise() %>%
@@ -622,7 +622,7 @@ map_santos <-
   tm_borders(lwd = 0.5) +
   tm_title("Los Santos")
 
-# Imprimir mapas juntos
+# Imprimir mapas (1 - 2)
 tmap_arrange(map_norte, map_santos, ncol = 2)
 # Liberar memoria
 rm(map_norte, map_santos)
@@ -630,7 +630,7 @@ rm(map_norte, map_santos)
 # Paleta de color para número de fincas
 pal_cantidad_fincas <- colorNumeric("YlOrRd", domain = c(0, 1000))
 
-# Gráfico cantidad de fincas
+# Gráfico de la cantidad total de fincas por cuadrícula
 resumen_coords %>%
   leaflet() %>%
   addProviderTiles("CartoDB.Positron") %>%
@@ -654,7 +654,7 @@ resumen_coords %>%
 # Paleta de color para área total de cafetales
 pal_area <- colorNumeric("YlOrRd", domain = c(0, 3000))
 
-# Gráfico área por cuadrícula
+# Gráfico del área total (ha) por cuadrícula
 resumen_coords %>%
   leaflet() %>%
   addProviderTiles("CartoDB.Positron") %>%
@@ -681,39 +681,39 @@ resumen_coords %>%
 # El siguiente proceso:
 # Identifica el pixel con mayor área de cafetales en cada región
 # Calcula la serie histórica de precipitaciones mensuales
-# Grafica el comparativo histórico de precipitaciones mensuales
+# Grafica un comparativo histórico de precipitaciones mensuales
 
 pixel_norte <- resumen_coords %>%
   filter(region == "Norte") %>%
   slice_max(area, n = 1)
 
-pixel_santos <- resumen_coords %>%
-  filter(region == "Los Santos") %>%
-  slice_max(area, n = 1)
-
 pixel_norte <- precipitaciones_norte %>%
   filter(lat == pixel_norte$lat, lon == pixel_norte$lon)
-
-pixel_santos <- precipitaciones_santos %>%
-  filter(lat == pixel_santos$lat, lon == pixel_santos$lon)
 
 pixel_norte <- pixel_norte %>%
   mutate(fecha = ymd(date), mes = floor_date(fecha, "month")) %>%
   group_by(region, mes) %>%
   summarise(precip_mes = sum(chirps), .groups = "drop")
 
+pixel_santos <- resumen_coords %>%
+  filter(region == "Los Santos") %>%
+  slice_max(area, n = 1)
+
+pixel_santos <- precipitaciones_santos %>%
+  filter(lat == pixel_santos$lat, lon == pixel_santos$lon)
+
 pixel_santos <- pixel_santos %>%
   mutate(fecha = ymd(date), mes = floor_date(fecha, "month")) %>%
   group_by(region, mes) %>%
   summarise(precip_mes = sum(chirps), .groups = "drop")
 
-ejemplo_mensual <- bind_rows(pixel_norte, pixel_santos)
+pixeles_comparativo <- bind_rows(pixel_norte, pixel_santos)
 rm(pixel_norte, pixel_santos)
 
-ejemplo_mensual %>%
+# Gráfico del comparativo de precipitaciones mensuales
+pixeles_comparativo %>%
   ggplot(aes(x = mes, y = precip_mes, color = region)) +
   geom_line(linewidth = 0.8) +
   labs(x = "Fecha", y = "Precipitación (mm)", color = "Región") +
   theme_minimal()
 ```
-
