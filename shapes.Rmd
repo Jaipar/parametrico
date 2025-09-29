@@ -400,6 +400,24 @@ if (!descargar_datos) {
 }
 ```
 
+```{r Guardar}
+# Guardar y cargar precipitaciones anuales e información de las fincas
+guardar_datos <- FALSE
+cargar_datos <- TRUE
+
+if (guardar_datos) {
+  save(
+    precipitaciones,
+    resumen_coords_norte,
+    resumen_coords_santos,
+    file = "listas_anuales.RData"
+  )
+}
+if (cargar_datos) {
+  load("listas_anuales.RData")
+}
+```
+
 ```{r Visualizar2}
 # Unir data.frames de precipitaciones anuales por región
 precipitaciones_norte <-
@@ -424,24 +442,6 @@ leaflet() %>%
   addTiles() %>%
   addPolygons(data = rectangulo_santos2, color = "blue", fillOpacity = 0.05) %>%
   addPolygons(data = cobertura_santos, color = "green", fillOpacity = 0.3)
-```
-
-```{r Guardar}
-# Guardar y cargar precipitaciones anuales e información de las fincas
-guardar_datos <- FALSE
-cargar_datos <- FALSE
-
-if (guardar_datos) {
-  save(
-    precipitaciones,
-    resumen_coords_norte,
-    resumen_coords_santos,
-    file = "precipitaciones.RData"
-  )
-}
-if (cargar_datos) {
-  load("precipitaciones.RData")
-}
 ```
 
 ```{r Promedios}
@@ -495,10 +495,10 @@ precipitaciones %>%
   )
 
 # Rango de precipitaciones anuales
-rng_precipitaciones <- c(0, 5000)
+rango_precipitaciones <- c(0, 5000)
 
 # Paleta de color para precipitaciones anuales
-pal_precipitaciones <- colorNumeric("YlGnBu", domain = rng_precipitaciones)
+pal_precipitaciones <- colorNumeric("YlGnBu", domain = rango_precipitaciones)
 
 # Gráfico: Promedio de precipitaciones anuales por pixel
 resumen_coords %>%
@@ -516,9 +516,52 @@ resumen_coords %>%
   addLegend(
     "bottomright",
     pal = pal_precipitaciones,
-    values = ~ rng_precipitaciones,
+    values = ~ rango_precipitaciones,
     title = "Precipitación anual (mm)"
   )
+
+# Función para agregar polígonos de cobertura cafetalera
+# Facilita gráficos del paquete leaflet
+capas_cobertura <- function(mapa) {
+  mapa %>%
+    addPolygons(
+      data = cobertura_norte,
+      fillColor = "green",
+      fillOpacity = 0.15,
+      color = "darkgreen",
+      weight = 1
+    ) %>%
+    addPolygons(
+      data = cobertura_santos,
+      fillColor = "green",
+      fillOpacity = 0.15,
+      color = "darkgreen",
+      weight = 1
+    )
+}
+
+# Función para crear polígonos de cuadrícula (0.05 x 0.05 grados)
+# Facilita gráficos del paquete tmap y otras funciones
+mutate_grid <- function(df) {
+  df %>%
+    rowwise() %>%
+    mutate(
+      geometry = list(
+        st_polygon(list(matrix(
+          c(
+            lon - 0.025, lat - 0.025, # nolint
+            lon + 0.025, lat - 0.025, # nolint
+            lon + 0.025, lat + 0.025, # nolint
+            lon - 0.025, lat + 0.025, # nolint
+            lon - 0.025, lat - 0.025 # nolint
+          ),
+          ncol = 2,
+          byrow = TRUE
+        )))
+      )
+    ) %>%
+    ungroup()
+}
 
 # Gráfico: Precipitaciones, cobertura, área y número de fincas
 resumen_coords %>%
@@ -537,48 +580,18 @@ resumen_coords %>%
       "Fincas: ", n_fincas
     )
   ) %>%
-  addPolygons(
-    data = cobertura_norte,
-    fillColor = "green",
-    fillOpacity = 0.15,
-    color = "darkgreen",
-    weight = 1
-  ) %>%
-  addPolygons(
-    data = cobertura_santos,
-    fillColor = "green",
-    fillOpacity = 0.15,
-    color = "darkgreen",
-    weight = 1
-  ) %>%
+  capas_cobertura() %>%
   addLegend(
     "bottomright",
     pal = pal_precipitaciones,
-    values = rng_precipitaciones,
+    values = rango_precipitaciones,
     title = "Precipitación anual promedio (mm)"
   )
 
-# Grafico comparativo de precipitaciones anuales promedio entre regiones
-
+# Grafico: Mapa cuadrícula de precipitaciones anuales (Región Norte)
 map_norte <-
   resumen_coords %>%
-  rowwise() %>%
-  mutate(
-    geometry = list(
-      st_polygon(list(matrix(
-        c(
-          lon - 0.025, lat - 0.025,
-          lon + 0.025, lat - 0.025,
-          lon + 0.025, lat + 0.025,
-          lon - 0.025, lat + 0.025,
-          lon - 0.025, lat - 0.025
-        ),
-        ncol = 2,
-        byrow = TRUE
-      )))
-    )
-  ) %>%
-  ungroup() %>%
+  mutate_grid() %>%
   filter(region == "Norte") %>%
   tm_shape() +
   tm_polygons(
@@ -592,25 +605,11 @@ map_norte <-
   tm_borders(lwd = 0.5) +
   tm_title("Región Norte")
 
+# Grafico: Mapa cuadrícula de precipitaciones anuales (Región Los Santos)
 map_santos <-
   resumen_coords %>%
   rowwise() %>%
-  mutate(
-    geometry = list(
-      st_polygon(list(matrix(
-        c(
-          lon - 0.025, lat - 0.025,
-          lon + 0.025, lat - 0.025,
-          lon + 0.025, lat + 0.025,
-          lon - 0.025, lat + 0.025,
-          lon - 0.025, lat - 0.025
-        ),
-        ncol = 2,
-        byrow = TRUE
-      )))
-    )
-  ) %>%
-  ungroup() %>%
+  mutate_grid() %>%
   filter(region == "Los Santos") %>%
   tm_shape() +
   tm_polygons(
@@ -624,12 +623,66 @@ map_santos <-
   tm_borders(lwd = 0.5) +
   tm_title("Los Santos")
 
+# Imprimir mapas juntos
 tmap_arrange(map_norte, map_santos, ncol = 2)
+# Liberar memoria
+rm(map_norte, map_santos)
 
+# Paleta de color para número de fincas
+pal_cantidad_fincas <- colorNumeric("YlOrRd", domain = c(0, 1000))
 
+# Gráfico cantidad de fincas
+resumen_coords %>%
+  leaflet() %>%
+  addProviderTiles("CartoDB.Positron") %>%
+  addRectangles(
+    lng1 = ~ lon - 0.05 / 2, lat1 = ~ lat - 0.05 / 2,
+    lng2 = ~ lon + 0.05 / 2, lat2 = ~ lat + 0.05 / 2,
+    fillColor = ~ pal_cantidad_fincas(n_fincas),
+    fillOpacity = 0.7,
+    color = "gray",
+    weight = 1,
+    label = ~ paste(n_fincas, "fincas")
+  ) %>%
+  capas_cobertura() %>%
+  addLegend(
+    "bottomright",
+    pal = pal_cantidad_fincas,
+    values = c(0, 1000),
+    title = "Cantidad de fincas"
+  )
+
+# Paleta de color para área total de cafetales
+pal_area <- colorNumeric("YlOrRd", domain = c(0, 3000))
+
+# Gráfico área por cuadrícula
+resumen_coords %>%
+  leaflet() %>%
+  addProviderTiles("CartoDB.Positron") %>%
+  addRectangles(
+    lng1 = ~ lon - 0.05 / 2, lat1 = ~ lat - 0.05 / 2,
+    lng2 = ~ lon + 0.05 / 2, lat2 = ~ lat + 0.05 / 2,
+    fillColor = ~ pal_area(area),
+    fillOpacity = 0.7,
+    color = "gray",
+    weight = 1,
+    label = ~ paste0(round(area, 2), " ha")
+  ) %>%
+  capas_cobertura() %>%
+  # Leyenda
+  addLegend(
+    "bottomright",
+    pal = pal_area,
+    values = c(0, 3000),
+    title = "Área total de cafetales (ha)"
+  )
 ```
 
 ```{r graphs promedios}
+
+
+
+
 # Crear cuadriculas de las zonas cafetaleras
 grids_norte <-
   resumen_coords_norte %>%
@@ -713,139 +766,6 @@ leaflet(grids_santos) %>%
   )
 
 
-```
-
-```{r graphs Norte}
-# Paleta de color para fincas
-pal_norte <- colorNumeric("YlOrRd", domain = grids_norte$n_fincas)
-
-# Gráfico cantidad de fincas
-
-leaflet() %>%
-  addProviderTiles("CartoDB.Positron") %>%
-  # Cuadrantes CHIRPS
-  addPolygons(
-    data = grids_norte,
-    fillColor = ~ pal_norte(n_fincas),
-    fillOpacity = 0.7,
-    color = "gray",
-    weight = 1,
-    label = ~ paste(n_fincas, "fincas")
-  ) %>%
-  # Polígonos (transparentes) de cobertura cafetalera
-  addPolygons(
-    data = cobertura_norte,
-    fillColor = "green",
-    fillOpacity = 0.2,
-    color = "darkgreen",
-    weight = 1
-  ) %>%
-  # Leyenda (número de fincas)
-  addLegend(
-    "bottomright",
-    pal = pal_norte,
-    values = grids_norte$n_fincas,
-    title = "Cantidad de fincas"
-  )
-
-# Paleta de color para fincas
-pal_norte <- colorNumeric("YlOrRd", domain = grids_norte$area)
-
-# Gráfico área por cuadrícula
-
-leaflet() %>%
-  addProviderTiles("CartoDB.Positron") %>%
-  # Cuadrantes CHIRPS con color por área
-  addPolygons(
-    data = grids_norte,
-    fillColor = ~ pal_norte(area),
-    fillOpacity = 0.7,
-    color = "gray",
-    weight = 1,
-    label = ~ paste0(round(area, 2), " ha")
-  ) %>%
-  # Capa de cobertura cafetalera Los Santos (transparente)
-  addPolygons(
-    data = cobertura_norte,
-    fillColor = "green",
-    fillOpacity = 0.2,
-    color = "darkgreen",
-    weight = 1
-  ) %>%
-  # Leyenda
-  addLegend(
-    "bottomright",
-    pal = pal_norte,
-    values = grids_norte$area,
-    title = "Área total de cafetales (ha)"
-  )
-```
-
-
-```{r graphs Los Santos}
-# Paleta de color para fincas
-pal_santos <- colorNumeric("YlOrRd", domain = grids_santos$n_fincas)
-
-# Gráfico cantidad de fincas
-
-leaflet() %>%
-  addProviderTiles("CartoDB.Positron") %>%
-  # Cuadrantes CHIRPS
-  addPolygons(
-    data = grids_santos,
-    fillColor = ~ pal_santos(n_fincas),
-    fillOpacity = 0.7,
-    color = "gray",
-    weight = 1,
-    label = ~ paste(n_fincas, "fincas")
-  ) %>%
-  # Polígonos (transparentes) de cobertura cafetalera
-  addPolygons(
-    data = cobertura_santos,
-    fillColor = "green",
-    fillOpacity = 0.2,
-    color = "darkgreen",
-    weight = 1
-  ) %>%
-  # Leyenda (número de fincas)
-  addLegend(
-    "bottomright",
-    pal = pal_santos,
-    values = grids_santos$n_fincas,
-    title = "Cantidad de fincas"
-  )
-
-# Paleta de color para fincas
-pal_santos <- colorNumeric("YlOrRd", domain = grids_santos$area)
-
-# Gráfico área por cuadrícula
-
-leaflet() %>%
-  addProviderTiles("CartoDB.Positron") %>%
-  # Cuadrantes CHIRPS con color por área
-  addPolygons(
-    data = grids_santos,
-    fillColor = ~ pal_santos(area),
-    fillOpacity = 0.7,
-    color = "gray",
-    weight = 1,
-    label = ~ paste0(round(area, 2), " ha")
-  ) %>%
-  # Capa de cobertura cafetalera Los Santos (transparente)
-  addPolygons(
-    data = cobertura_santos,
-    fillColor = "green",
-    fillOpacity = 0.2,
-    color = "darkgreen",
-    weight = 1
-  ) %>%
-  # Leyenda
-  addLegend(
-    "bottomright",
-    pal = pal_santos,
-    values = grids_santos$area,
-    title = "Área total de cafetales (ha)"
-  )
 ```
 
 
