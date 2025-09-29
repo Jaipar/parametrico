@@ -416,9 +416,7 @@ if (guardar_datos) {
 if (cargar_datos) {
   load("listas_anuales.RData")
 }
-```
 
-```{r Visualizar2}
 # Unir data.frames de precipitaciones anuales por región
 precipitaciones_norte <-
   bind_rows(lista_anual_norte, .id = "year") %>%
@@ -430,7 +428,9 @@ precipitaciones_santos <-
 
 # Unir todas las tablas de la lista en un solo data frame
 precipitaciones <- bind_rows(precipitaciones_norte, precipitaciones_santos)
+```
 
+```{r Visualizar2}
 # Visualizar cobertura cafetalera y rectángulo envolvente de región Norte
 leaflet() %>%
   addTiles() %>%
@@ -597,7 +597,7 @@ map_norte <-
     fill = "precip_anual_prom",
     fill.scale = tm_scale(
       values = "brewer.blues",
-      breaks = seq(rng_precipitaciones[1], rng_precipitaciones[2], 500)
+      breaks = seq(rango_precipitaciones[1], rango_precipitaciones[2], 500)
     ),
     fill.legend = tm_legend(title = "Lluvia (mm)")
   ) +
@@ -615,7 +615,7 @@ map_santos <-
     fill = "precip_anual_prom",
     fill.scale = tm_scale(
       values = "brewer.blues",
-      breaks = seq(rng_precipitaciones[1], rng_precipitaciones[2], 500)
+      breaks = seq(rango_precipitaciones[1], rango_precipitaciones[2], 500)
     ),
     fill.legend = tm_legend(title = "Lluvia (mm)")
   ) +
@@ -678,31 +678,40 @@ resumen_coords %>%
 ```
 
 ```{r Visualizar3}
-# Gráfico de serie de tiempo
-pixel_norte <- resumen_coords_norte %>% slice_max(area, n = 1)
-pixel_santos <- resumen_coords_santos %>% slice_max(area, n = 1)
+# El siguiente proceso:
+# Identifica el pixel con mayor área de cafetales en cada región
+# Calcula la serie histórica de precipitaciones mensuales
+# Grafica el comparativo histórico de precipitaciones mensuales
 
-prec_norte <- bind_rows(lista_anual_norte, .id = "año") %>%
+pixel_norte <- resumen_coords %>%
+  filter(region == "Norte") %>%
+  slice_max(area, n = 1)
+
+pixel_santos <- resumen_coords %>%
+  filter(region == "Los Santos") %>%
+  slice_max(area, n = 1)
+
+pixel_norte <- precipitaciones_norte %>%
   filter(lat == pixel_norte$lat, lon == pixel_norte$lon)
 
-prec_santos <- bind_rows(lista_anual_santos, .id = "año") %>%
+pixel_santos <- precipitaciones_santos %>%
   filter(lat == pixel_santos$lat, lon == pixel_santos$lon)
 
-prec_norte <- prec_norte %>%
+pixel_norte <- pixel_norte %>%
   mutate(fecha = ymd(date), mes = floor_date(fecha, "month")) %>%
-  group_by(mes) %>%
-  summarise(precip_mm = sum(chirps), .groups = "drop") %>%
-  mutate(region = "Norte")
+  group_by(region, mes) %>%
+  summarise(precip_mes = sum(chirps), .groups = "drop")
 
-prec_santos <- prec_santos %>%
+pixel_santos <- pixel_santos %>%
   mutate(fecha = ymd(date), mes = floor_date(fecha, "month")) %>%
-  group_by(mes) %>%
-  summarise(precip_mm = sum(chirps), .groups = "drop") %>%
-  mutate(region = "Los Santos")
+  group_by(region, mes) %>%
+  summarise(precip_mes = sum(chirps), .groups = "drop")
 
-serie_prec <- bind_rows(prec_norte, prec_santos)
+ejemplo_mensual <- bind_rows(pixel_norte, pixel_santos)
+rm(pixel_norte, pixel_santos)
 
-ggplot(serie_prec, aes(x = mes, y = precip_mm, color = region)) +
+ejemplo_mensual %>%
+  ggplot(aes(x = mes, y = precip_mes, color = region)) +
   geom_line(linewidth = 0.8) +
   labs(x = "Fecha", y = "Precipitación (mm)", color = "Región") +
   theme_minimal()
