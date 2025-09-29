@@ -442,9 +442,7 @@ leaflet() %>%
   addTiles() %>%
   addPolygons(data = rectangulo_santos2, color = "blue", fillOpacity = 0.05) %>%
   addPolygons(data = cobertura_santos, color = "green", fillOpacity = 0.3)
-```
 
-```{r Promedios}
 # Promedio de precipitaciones anuales por pixel
 chirps_prom <- precipitaciones %>%
   group_by(region, lon, lat, year) %>%
@@ -560,7 +558,8 @@ mutate_grid <- function(df) {
         )))
       )
     ) %>%
-    ungroup()
+    ungroup() %>%
+    st_as_sf(crs = 4326, sf_column_name = "geometry")
 }
 
 # Gráfico: Precipitaciones, cobertura, área y número de fincas
@@ -678,98 +677,7 @@ resumen_coords %>%
   )
 ```
 
-```{r graphs promedios}
-
-
-
-
-# Crear cuadriculas de las zonas cafetaleras
-grids_norte <-
-  resumen_coords_norte %>%
-  rowwise() %>%
-  mutate(
-    geometry = list(
-      st_polygon(list(matrix(
-        c(
-          lon - 0.025, lat - 0.025,
-          lon + 0.025, lat - 0.025,
-          lon + 0.025, lat + 0.025,
-          lon - 0.025, lat + 0.025,
-          lon - 0.025, lat - 0.025
-        ),
-        ncol = 2,
-        byrow = TRUE
-      )))
-    )
-  ) %>%
-  ungroup() %>%
-  st_as_sf(crs = 4326, sf_column_name = "geometry")
-
-grids_santos <-
-  resumen_coords_santos %>%
-  rowwise() %>%
-  mutate(
-    geometry = list(
-      st_polygon(list(matrix(
-        c(
-          lon - 0.025, lat - 0.025,
-          lon + 0.025, lat - 0.025,
-          lon + 0.025, lat + 0.025,
-          lon - 0.025, lat + 0.025,
-          lon - 0.025, lat - 0.025
-        ),
-        ncol = 2,
-        byrow = TRUE
-      )))
-    )
-  ) %>%
-  ungroup() %>%
-  st_as_sf(crs = 4326, sf_column_name = "geometry")
-
-pal_comun <- colorNumeric(
-  "Blues",
-  domain = c(grids_santos$precip_anual_prom, grids_norte$precip_anual_prom)
-)
-
-rango_comun <- range(
-  c(grids_norte$precip_anual_prom, grids_santos$precip_anual_prom),
-  na.rm = TRUE
-)
-
-
-
-leaflet(grids_santos) %>%
-  addProviderTiles("CartoDB.Positron") %>%
-  addPolygons(
-    fillColor = ~ pal_comun(precip_anual_prom),
-    fillOpacity = 0.7,
-    color = "gray",
-    weight = 1,
-    label = ~ paste0(
-      "Lluvia: ", round(precip_anual_prom, 1), " mm\n",
-      "Área: ", round(area, 1), " ha\n",
-      "Fincas: ", n_fincas
-    )
-  ) %>%
-  addPolygons(
-    data = cobertura_santos,
-    fillColor = "green",
-    fillOpacity = 0.15,
-    color = "darkgreen",
-    weight = 1
-  ) %>%
-  addLegend(
-    "bottomright",
-    pal = pal_comun,
-    values = rango_comun,
-    title = "Precipitación anual promedio (mm)"
-  )
-
-
-```
-
-
-```{r graphs serie, fig.width=10, fig.height=6}
+```{r Visualizar3}
 # Gráfico de serie de tiempo
 pixel_norte <- resumen_coords_norte %>% slice_max(area, n = 1)
 pixel_santos <- resumen_coords_santos %>% slice_max(area, n = 1)
