@@ -4,7 +4,7 @@ output: html_document
 date: "2025-06-14"
 ---
 
-```{r Librerías}
+```{r Librerías, message = FALSE, warning = FALSE}
 # Manejo y análisis de datos geoespaciales (vectores)
 library(sf)
 
@@ -314,7 +314,7 @@ leaflet(resumen_coords_santos) %>%
   )
 ```
 
-```{r Descargar, eval=TRUE}
+```{r Descargar}
 # Opción para descargar datos (TRUE) o cargar datos guardados (FALSE)
 # Descargar datos puede tardar varias horas
 descargar_datos <- FALSE
@@ -398,24 +398,6 @@ if (!descargar_datos) {
   rm(i, vector_annos)
   gc()
 }
-```
-
-```{r Guardar}
-# Guardar y cargar precipitaciones anuales e información de las fincas
-guardar_datos <- FALSE
-cargar_datos <- TRUE
-
-if (guardar_datos) {
-  save(
-    precipitaciones,
-    resumen_coords_norte,
-    resumen_coords_santos,
-    file = "listas_anuales.RData"
-  )
-}
-if (cargar_datos) {
-  load("listas_anuales.RData")
-}
 
 # Unir data.frames de precipitaciones anuales por región
 precipitaciones_norte <-
@@ -434,14 +416,22 @@ precipitaciones <- bind_rows(precipitaciones_norte, precipitaciones_santos)
 # Visualizar cobertura cafetalera y rectángulo envolvente de región Norte
 leaflet() %>%
   addTiles() %>%
-  addPolygons(data = rectangulo_norte2, color = "blue", fillOpacity = 0.05) %>%
-  addPolygons(data = cobertura_norte, color = "green", fillOpacity = 0.3)
+  addPolygons(data = rectangulo_norte2,
+              color = "blue",
+              fillOpacity = 0.05) %>%
+  addPolygons(data = cobertura_norte,
+              color = "green",
+              fillOpacity = 0.3)
 
 # Visualizar cobertura cafetalera y rectángulo envolvente de región Los Santos
 leaflet() %>%
   addTiles() %>%
-  addPolygons(data = rectangulo_santos2, color = "blue", fillOpacity = 0.05) %>%
-  addPolygons(data = cobertura_santos, color = "green", fillOpacity = 0.3)
+  addPolygons(data = rectangulo_santos2,
+              color = "blue",
+              fillOpacity = 0.05) %>%
+  addPolygons(data = cobertura_santos,
+              color = "green",
+              fillOpacity = 0.3)
 
 # Promedio de precipitaciones anuales por pixel
 chirps_prom <- precipitaciones %>%
@@ -545,24 +535,28 @@ mutate_grid <- function(df) {
     rowwise() %>%
     mutate(
       geometry = list(
-        st_polygon(list(matrix(
-          c(
-            lon - 0.025, lat - 0.025, # nolint
-            lon + 0.025, lat - 0.025, # nolint
-            lon + 0.025, lat + 0.025, # nolint
-            lon - 0.025, lat + 0.025, # nolint
-            lon - 0.025, lat - 0.025 # nolint
-          ),
-          ncol = 2,
-          byrow = TRUE
-        )))
+        st_polygon(
+          list(
+            matrix(
+              c(lon - 0.025, lat - 0.025,
+                lon + 0.025, lat - 0.025,
+                lon + 0.025, lat + 0.025,
+                lon - 0.025, lat + 0.025,
+                lon - 0.025, lat - 0.025
+              ),
+              ncol = 2,
+              byrow = TRUE
+            )
+          )
+        )
       )
     ) %>%
     ungroup() %>%
     st_as_sf(crs = 4326, sf_column_name = "geometry")
 }
 
-# Gráfico: Precipitaciones, cobertura, área y número de fincas
+# Gráfico: Ambas zonas
+# Precipitaciones, cobertura, área y número de fincas
 resumen_coords %>%
   leaflet() %>%
   addProviderTiles("CartoDB.Positron") %>%
@@ -587,7 +581,7 @@ resumen_coords %>%
     title = "Precipitación anual promedio (mm)"
   )
 
-# Grafico: Mapa cuadrícula de precipitaciones anuales (1 - Región Norte)
+# Gráfico: Mapa cuadrícula de precipitaciones anuales (1 - Región Norte)
 map_norte <-
   resumen_coords %>%
   mutate_grid() %>%
@@ -602,9 +596,10 @@ map_norte <-
     fill.legend = tm_legend(title = "Lluvia (mm)")
   ) +
   tm_borders(lwd = 0.5) +
-  tm_title("Región Norte")
+  tm_title("Región Norte") +
+  tm_layout(legend.text.size = 0.6, legend.title.size = 0.6)
 
-# Grafico: Mapa cuadrícula de precipitaciones anuales (2 - Región Los Santos)
+# Gráfico: Mapa cuadrícula de precipitaciones anuales (2 - Región Los Santos)
 map_santos <-
   resumen_coords %>%
   rowwise() %>%
@@ -620,10 +615,11 @@ map_santos <-
     fill.legend = tm_legend(title = "Lluvia (mm)")
   ) +
   tm_borders(lwd = 0.5) +
-  tm_title("Los Santos")
+  tm_title("Los Santos") +
+  tm_layout(legend.text.size = 0.6, legend.title.size = 0.6)
 
 # Imprimir mapas (1 - 2)
-tmap_arrange(map_norte, map_santos, ncol = 2)
+tmap_arrange(map_norte, map_santos, ncol = 2, sync = TRUE)
 # Liberar memoria
 rm(map_norte, map_santos)
 
@@ -716,4 +712,22 @@ pixeles_comparativo %>%
   geom_line(linewidth = 0.8) +
   labs(x = "Fecha", y = "Precipitación (mm)", color = "Región") +
   theme_minimal()
+```
+
+```{r Guardar}
+# Guardar y cargar precipitaciones anuales e información de las fincas
+guardar_datos <- FALSE
+cargar_datos <- TRUE
+
+if (guardar_datos) {
+  save(
+    precipitaciones,
+    resumen_coords_norte,
+    resumen_coords_santos,
+    file = "listas_anuales.RData"
+  )
+}
+if (cargar_datos) {
+  load("listas_anuales.RData")
+}
 ```
