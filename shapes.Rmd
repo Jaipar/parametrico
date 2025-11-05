@@ -5,33 +5,8 @@ date: "2025-06-14"
 ---
 
 ```{r Librerías, message = FALSE, warning = FALSE}
-# Manejo y análisis de datos geoespaciales (vectores)
-library(sf)
-
-# Visualización temática de datos espaciales (mapas estáticos y dinámicos)
-library(tmap)
-tmap_mode("plot")
-
-# Manipulación y transformación de datos (data frames y tibbles)
-library(dplyr)
-
-# Visualización interactiva de mapas web (basados en Leaflet.js)
-library(leaflet)
-
-# Creación de gráficos estáticos y personalizados (gramática de gráficos)
-library(ggplot2)
-
-# Enlace con servidores CHIRPS
-library(chirps)
-
-# Consultar elevación puntual
-library(elevatr)
-
-# Tratamiento de fechas
-library(lubridate)
-
-# Paletas de colores para gráficos
-library(RColorBrewer)
+# Cargar librerías
+source("_setup.R")
 ```
 
 ```{r Cargar}
