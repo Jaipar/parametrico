@@ -2,4 +2,5 @@
 .Rproj.user/
 *.RData
 *.html
+*.parquet
 shapes_files/
