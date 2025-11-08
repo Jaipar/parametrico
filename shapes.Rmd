@@ -266,6 +266,9 @@ precipitaciones_santos <-
 
 # Unir todas las tablas de la lista en un solo data.frame
 precipitaciones <- bind_rows(precipitaciones_norte, precipitaciones_santos)
+
+# Liberar memoria
+rm(precipitaciones_norte,precipitaciones_santos)
 ```
 
 ```{r Promedio anual}
@@ -563,49 +566,59 @@ kmean_grafico_grupos <- function(datos = resumen_coords, k, pesos = c(2,2,1)){
 }
 
 # Región Norte
+# ...
 
 # Región Los Santos
-completar_grilla(resumen_coords %>% filter(region == "Los Santos") )
+completar_grilla(resumen_coords %>% filter(region == "Los Santos"))
 ```
 
+```{r Punto de guardado 1}
+# Descargar y cargar píxeles de sub-grillas restantes
+descargar_subgrilla <- FALSE
+cargar_subgrilla <- !descargar_subgrilla
 
-```{r Completar grillas}
-lista_falt_santos <- 
-  descargar_puntos_faltantes( 
-    resumen_coords %>%
-    filter( region == "Los Santos" ) %>%
-    .[,c("lon","lat")] 
-  )
+if(descargar_subgrilla){
+  lista_falt_santos <- 
+    descargar_puntos_faltantes(
+      resumen_coords %>%
+        filter(region == "Los Santos")
+    )
+  save(lista_falt_santos, file = "listas_faltantes.RData")
+}
+if(cargar_subgrilla){
+  load("listas_faltantes.RData")
+}
 
+# Unir data.frames de precipitaciones anuales restantes 
+precipitaciones_faltantes_santos <-
+  bind_rows(lista_falt_santos, .id = "year") %>%
+  mutate(region = "Los Santos#")
 
-
-library(dbscan)
-
-coords <- 
-
-modelo <- kmeans(coords, centers = 3)
-
-coords <- coords %>% mutate( cluster = modelo$cluster )
-
-ggplot(df, aes(lon, lat, color = factor(cluster))) +
-  geom_point(size = 2) +
-  theme_minimal()
-
-coords
+# Crear data.frame resumen
+resumen_faltantes <-
+  precipitaciones_faltantes_santos %>%
+  group_by(year, lon, lat, region) %>%
+  summarise( precip_anual = sum(chirps), .groups = "drop" ) %>%
+  group_by(region, lon, lat) %>%
+  summarise(
+    precip_anual_prom = mean(precip_anual, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  mutate(n_fincas = 0, area = 0) %>%
+  st_as_sf(coords = c("lon", "lat"),crs = 4326, remove = FALSE ) %>%
+  get_elev_point(src = "aws", z = 5) %>%
+  .[, colnames(resumen_coords)]
 ```
 
-
-
-```{r Guardar}
+```{r Punto de guardado 2}
 # Guardar y cargar precipitaciones anuales e información de las fincas
 guardar_datos <- FALSE
-cargar_datos <- TRUE
+cargar_datos <- !guardar_datos
 
 if (guardar_datos) {
   save(
     precipitaciones,
-    resumen_coords_norte,
-    resumen_coords_santos,
+    resumen_coords,
     file = "listas_anuales.RData"
   )
 }
