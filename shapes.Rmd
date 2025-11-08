@@ -24,20 +24,20 @@ cobertura <- st_set_crs(cobertura, 5367) # EPSG 5367 = CRTM05
 regiones <- st_transform(regiones, 4326)
 cobertura <- st_transform(cobertura, 4326)
 
-# Intentar corregir geometrías inválidas
+# Corregir geometrías inválidas
 #   Reparar auto-intersecciones:
 #     Si un polígono se cruza a sí mismo, la función puede dividirlo en partes
 #     válidas o recortarlo para eliminar las intersecciones.
 #   Eliminar vértices duplicados:
 #     Borra puntos consecutivos idénticos o muy cercanos que no aportan nada.
 #   Cerrar anillos abiertos:
-#     Si un anillo no está cerrado (el último punto no coincide con el primero),
-#     la función lo cierra automáticamente.
+#     Si un anillo no está cerrado (el último punto no coincide con el
+#     primero), la función lo cierra automáticamente.
 #   Separar polígonos multi-parte mal formados:
 #     En caso de que geometrías compuestas o multi-polígonos
 #     presenten problemas, se les separa en partes válidas.
 #   Corregir orientación de anillos:
-#     Puede ajustar la dirección en la que están ordenados los vértices
+#     Ajustar la dirección en la que están ordenados los vértices
 #     para cumplir las convenciones.
 if (any(!st_is_valid(regiones))) {
   regiones <- st_make_valid(regiones)
@@ -270,7 +270,8 @@ precipitaciones <- bind_rows(precipitaciones_norte, precipitaciones_santos)
 
 ```{r Promedio anual}
 # Promedio de precipitaciones anuales por pixel
-chirps_prom <- precipitaciones %>%
+chirps_prom <- 
+  precipitaciones %>%
   group_by(region, lon, lat, year) %>%
   summarise(precip_anual = sum(chirps), .groups = "drop") %>%
   group_by(region, lon, lat) %>%
@@ -293,6 +294,307 @@ resumen_coords <- bind_rows(resumen_coords_norte, resumen_coords_santos)
 # Liberar memoria
 rm(chirps_prom, resumen_coords_norte, resumen_coords_santos)
 ```
+
+```{r Grillas}
+# La metodología requiere grillas cuadriculadas n x n
+# La cobertura cafetalera no necesariamente está distribuida en grillas n x n
+
+# Se plantea encontrar la sub-grilla n x n que poseen la mayor cantidad de
+#   información disponible (descargada) actualmente.
+# Cuando se identifiquen las coordenadas de los píxeles sin información 
+#   disponible se procederá con la descarga puntual desde CHIRPS.
+# Con este proceso se pretende ser más eficiente con el almacenamiento.
+
+# Función para buscar todas las sub-grillas posibles y determinar la sub-grilla
+#   con mayor información disponible.
+encontrar_mejor_grilla <- function(grid_full, n = 5) {
+  lats <- sort(unique(grid_full$lat))
+  lons <- sort(unique(grid_full$lon))
+  best_sub <- NULL
+  best_score <- -Inf
+
+  if (length(lats) < n | length(lons) < n) {
+    warning("Filas o columnas insuficientes para formar una grilla ",
+            n, "x", n)
+    return(NULL)
+  }
+
+  for (i in seq_len(length(lats) - n + 1)) {
+    for (j in seq_len(length(lons) - n + 1)) {
+      sub <- subset(
+        grid_full,
+        # Condiciones
+        lat >= lats[i] &
+          lat <= lats[i + n - 1] &
+          lon >= lons[j] &
+          lon <= lons[j + n - 1]
+      )
+      if (nrow(sub) == n * n) {
+        score <- sum(sub$descargado)
+        if (score > best_score) {
+          best_score <- score
+          best_sub <- sub
+        }
+      }
+    }
+  }
+
+  return(best_sub)
+}
+
+# Función para identificar las coordenadas de la mejor sub-grilla n x n.
+# Retorna un data.frame que identifica que coordenadas son requeridas
+# Genera un gráfico auxiliar si plot = TRUE
+completar_grilla <- function(puntos, res = 0.05, n = 5, plot = TRUE) {
+  # Determinar longitudes y latitudes máximas
+  lat_min <- min(puntos$lat)
+  lat_max <- max(puntos$lat)
+  lon_min <- min(puntos$lon)
+  lon_max <- max(puntos$lon)
+
+  # Asegurar que haya al menos n pasos en cada dirección
+  while (length(seq(lat_min, lat_max, by = res)) < n) lat_max <- lat_max + res
+  while (length(seq(lon_min, lon_max, by = res)) < n) lon_max <- lon_max + res
+
+  # Crear una malla rectangular con al menos n pasos en cada dirección
+  lats_full <- seq(lat_min, lat_max, by = res)
+  lons_full <- seq(lon_min, lon_max, by = res)
+  grid_full <- expand.grid(lat = lats_full, lon = lons_full)
+  
+  # Identificar que puntos YA están descargados
+  grid_full$descargado <- paste(grid_full$lat, grid_full$lon) %in% 
+    paste(puntos$lat, puntos$lon)
+
+  # Encontrar mejor sub-grilla
+  mejor_subgrilla <- encontrar_mejor_grilla(grid_full, n)
+
+  if (plot && !is.null(mejor_subgrilla)) {
+    plot_subgrilla <- 
+      ggplot(grid_full, aes(lon, lat)) +
+      geom_tile(aes(fill = descargado), color = "grey70") +
+      scale_fill_manual(values = c("FALSE" = "grey80", "TRUE" = "steelblue")) +
+      geom_tile(
+        data = mejor_subgrilla,
+        color = "red",
+        linewidth = 1.2,
+        fill = NA) +
+      coord_fixed() +
+      labs(title = paste("Mejor subgrilla", n, "x", n),
+           fill = "¿Región con cobertura cafetalera?") +
+      theme_minimal() +
+      theme(
+        plot.title = element_text(hjust = 0.5),
+        legend.title = element_text(size = 8)
+      )
+    print(plot_subgrilla)
+  }
+
+  # return(list(grid_full = grid_full, mejor_subgrilla = mejor_subgrilla))
+  return(mejor_subgrilla)
+}
+
+# Función para descargar información de CHIRPS de los píxeles restantes de
+#   acuerdo con la función que completa las grillas.
+descargar_puntos_faltantes <- function(puntos, res = 0.05, n = 5, plot = TRUE){
+  # Determinar la mejor grilla con menor información faltante
+  mejor_subgrilla <- completar_grilla(puntos, res, n, plot)
+  mejor_subgrilla <- mejor_subgrilla %>% filter( !descargado )
+  
+  # Vector de años
+  vector_annos <- 2000:2024
+
+  # Lista para almacenar datos anuales de puntos faltantes
+  lista_faltante <- list()
+  
+  # Descargar información CHIRPS
+  for (i in seq_along(vector_annos)) {
+    message("Descargando año ", vector_annos[i])
+
+    # Descarga con manejo de errores
+    lista_faltante[[i]] <- tryCatch(
+      {
+        get_chirps(
+          data.frame(
+            lon = mejor_subgrilla$lon,
+            lat = mejor_subgrilla$lat
+          ),
+          dates = c(
+            paste0(vector_annos[i], "-01-01"),
+            paste0(vector_annos[i], "-12-31")
+          ),
+          server = "ClimateSERV"
+        )
+      },
+      error = function(e) {
+        message("⚠️ Error en año ", vector_annos[i], ": ", e$message)
+      }
+    )
+    # Pausa de 0.5 segundos entre descargas
+    # Evitar saturar el servidor ClimateSERV y reducir riesgo de bloqueos
+    Sys.sleep(0.5)
+  }
+  
+  # Nombrar lista con años
+  names(lista_faltante) <- as.character(vector_annos)
+  
+  return(lista_faltante)
+}
+
+# Mediante gráficos se puede reconocer fácilmente que la cobertura cafetalera
+#    en la región Los Santos está más concentrada mientras que en la región
+#    Norte se encuentra más dispersa entre sí.
+# Se plantea el uso de métodos de agrupamiento para separar las regiones en
+#   distintos sub-grupos con la finalidad de corroborar estadísticamente lo
+#   que se puede apreciar visualmente.
+
+# Método de agrupamiento: K-Means
+# Se empleará K-Means sobre una matriz con las variables explicativas de 
+#   longitud, latitud y altura.
+# Se aplicará un vector de pesos w para asignar más importancia relativa
+#   a las variables de longitud y latitud sobre altura (el doble).
+
+# Función para normalizar matriz de coordenadas geográficas y altura
+# Aplica un vector para escalar columnas según prioridad 
+kmeans_preparar_data <- function(datos = resumen_coords, pesos = c(2,2,1)){
+  pesos <- pesos/sum(pesos)
+  
+  datos <- 
+    datos[,c("lon","lat","elevation")] %>%
+    st_drop_geometry() %>%
+    as.matrix() %>%
+    scale() %>%
+    t() %>%
+    `*`(pesos) %>%
+    t()
+  
+  return(datos)
+}
+
+# Función para determinar un número óptimo de grupos k
+# Aplica métodos del Codo y de la Silueta
+kmean_determinar_k <- function(datos = resumen_coords, pesos = c(2,2,1)){
+  datos <- kmeans_preparar_data(datos)
+  nmax <- 10
+  
+  # Suma de los errores cuadrados intra-cluster (SSE)
+  sse <- numeric()
+  # Ancho de la silueta
+  sil_width <- numeric()
+  
+  for (k in 1:nmax) {
+    modelo <- kmeans(datos, centers = k, nstart = 20)
+    sse[k] <- modelo$tot.withinss
+    if(k >= 2){
+      ss <- silhouette(modelo$cluster, dist(datos))
+      sil_width[k] <- mean(ss[, 3])
+    }
+  }
+  
+  df_sse <- data.frame(k = 1:nmax, sse = sse)
+  df_sil <- data.frame(k = 2:nmax, sil_width = sil_width[-1])
+  
+  # Método del Codo (Elbow method)
+  
+  ## Primer y último punto
+  x0 <- 1
+  y0 <- sse[x0]
+  x1 <- nmax
+  y1 <- sse[x1]
+  ## Distancia perpendicular de cada punto a la línea
+  dist_perp <- function(xk, yk){
+  abs((y1 - y0)*xk - (x1 - x0)*yk + x1*y0 - y1*x0) / 
+      sqrt((y1 - y0)^2 + (x1 - x0)^2)
+  }
+  distancias <- sapply(1:nmax, function(k) dist_perp(k, sse[k]))
+  
+  ## K con el mayor cambio
+  k_Elbow <- which.max(distancias)
+  
+  ## Gráfico
+  plot_Elbow <- 
+    ggplot(df_sse, aes(k, sse)) +
+    geom_line() +
+    geom_point() +
+    labs(title = "Método del Codo",
+         x = "Número de clusters (k)",
+         y = "SSE") +
+    scale_x_continuous(breaks = 1:nmax) +
+    theme_minimal() +
+    theme(plot.title = element_text(hjust = 0.5))
+  print(plot_Elbow)
+  
+  # Método del coeficiente de silueta (Silhouette method)
+  k_Silhouette <- which.max(sil_width)
+  
+  ## Gráfico
+  plot_Silhouette <-
+    ggplot(df_sil, aes(k, sil_width)) +
+    geom_line() +
+    geom_point() +
+    theme_minimal() +
+    labs(title = "Método de la Silueta",
+         x = "Número de clusters (k)",
+         y = "Ancho promedio de silueta") +
+    scale_x_continuous(breaks = 2:nmax) +
+    theme_minimal() +
+    theme(plot.title = element_text(hjust = 0.5))
+  print(plot_Silhouette)
+  
+  return(c(k_Elbow,k_Silhouette))
+}
+
+# Función para visualizar el agrupamiento mediante K-Means.
+kmean_grafico_grupos <- function(datos = resumen_coords, k, pesos = c(2,2,1)){
+  datos_normalizados <- kmeans_preparar_data(datos,pesos)
+  modelo <- kmeans(datos_normalizados, centers = k, nstart = 20)
+  datos <- datos %>% mutate(cluster = factor(modelo$cluster))
+  
+  plot_grupos <- 
+    ggplot(datos, aes(x = lon, y = lat, color = cluster)) +
+    geom_point(size = 3) +
+    coord_fixed() +
+    labs(title = "Agrupación espacial por k-means",
+         color = "Grupo") +
+    scale_color_brewer(palette = "Set2") +
+    theme_minimal() +
+    theme(plot.title = element_text(hjust = 0.5))
+  
+  print(plot_grupos)
+}
+
+# Región Norte
+
+# Región Los Santos
+completar_grilla(resumen_coords %>% filter(region == "Los Santos") )
+```
+
+
+```{r Completar grillas}
+lista_falt_santos <- 
+  descargar_puntos_faltantes( 
+    resumen_coords %>%
+    filter( region == "Los Santos" ) %>%
+    .[,c("lon","lat")] 
+  )
+
+
+
+library(dbscan)
+
+coords <- 
+
+modelo <- kmeans(coords, centers = 3)
+
+coords <- coords %>% mutate( cluster = modelo$cluster )
+
+ggplot(df, aes(lon, lat, color = factor(cluster))) +
+  geom_point(size = 2) +
+  theme_minimal()
+
+coords
+```
+
+
 
 ```{r Guardar}
 # Guardar y cargar precipitaciones anuales e información de las fincas
