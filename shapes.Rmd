@@ -625,15 +625,27 @@ if (guardar_datos) {
   )
   
   precipitaciones %>%
-  dplyr::select(lon,lat,date,chirps) %>%
-  left_join( 
-    resumen_coords %>%
-      st_drop_geometry() %>%
-      dplyr::select(lon,lat,region,elevation),
-    by = c("lon","lat")
-  ) %>%
-  dplyr::select(lon, lat, elevation, date, chirps, region) %>%
-  write_parquet("tablas_precipitaciones.parquet")
+    dplyr::select(lon,lat,date,chirps) %>%
+    left_join( 
+      resumen_coords %>%
+        st_drop_geometry() %>%
+        dplyr::select(lon,lat,region,elevation),
+      by = c("lon","lat")
+    ) %>%
+    dplyr::select(lon, lat, elevation, date, chirps, region) %>%
+    write_parquet("tablas_precipitaciones.parquet")
+  
+  precipitaciones_faltantes_santos %>%
+    dplyr::select(lon,lat,date,chirps) %>%
+    left_join( 
+      resumen_faltantes %>%
+        st_drop_geometry() %>%
+        dplyr::select(lon,lat,region,elevation),
+      by = c("lon","lat")
+    ) %>%
+    dplyr::select(lon, lat, elevation, date, chirps, region) %>%
+    write_parquet("tablas_faltantes.parquet")
+  
 }
 if (cargar_datos) {
   load("tablas_precipitaciones.RData")
