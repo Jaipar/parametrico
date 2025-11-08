@@ -11,6 +11,9 @@ tmap_mode("plot")
 # Manipulación y transformación de datos (data frames y tibbles)
 pacman::p_load(dplyr)
 
+# Escritura y lectura de datos en formato .feather o .parquet
+pacman::p_load(arrow)
+
 # Visualización interactiva de mapas web (basados en Leaflet.js)
 pacman::p_load(leaflet)
 

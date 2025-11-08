@@ -613,16 +613,29 @@ resumen_faltantes <-
 ```{r Punto de guardado 2}
 # Guardar y cargar precipitaciones anuales e información de las fincas
 guardar_datos <- FALSE
-cargar_datos <- !guardar_datos
+cargar_datos <- TRUE
 
 if (guardar_datos) {
   save(
     precipitaciones,
+    precipitaciones_faltantes_santos,
     resumen_coords,
-    file = "listas_anuales.RData"
+    resumen_faltantes,
+    file = "tablas_precipitaciones.RData"
   )
+  
+  precipitaciones %>%
+  dplyr::select(lon,lat,date,chirps) %>%
+  left_join( 
+    resumen_coords %>%
+      st_drop_geometry() %>%
+      dplyr::select(lon,lat,region,elevation),
+    by = c("lon","lat")
+  ) %>%
+  dplyr::select(lon, lat, elevation, date, chirps, region) %>%
+  write_parquet("tablas_precipitaciones.parquet")
 }
 if (cargar_datos) {
-  load("listas_anuales.RData")
+  load("tablas_precipitaciones.RData")
 }
 ```
