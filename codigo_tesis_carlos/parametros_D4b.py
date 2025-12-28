@@ -7,10 +7,7 @@ from bayesflow.amortizers import AmortizedPosterior
 from bayesflow.networks import InvertibleNetwork
 from bayesflow.simulation import GenerativeModel, Prior, Simulator
 from bayesflow.trainers import Trainer
-import tensorflow as tf
 import seaborn as sns
-import matplotlib.pyplot as plt
-import numpy as np
 import pandas as pd
 import statsmodels as sm
 import statsmodels.api as sm
@@ -19,7 +16,6 @@ from scipy.spatial.distance import pdist, squareform
 from scipy.stats import mvn, gamma as xgamma, norm,multivariate_normal
 from scipy.special import gamma, factorial
 from timeit import default_timer as timer
- 
 from sklearn.preprocessing import MinMaxScaler
 # importing datetime module
 from datetime import datetime
@@ -72,7 +68,7 @@ n_iterations_per_epoch = 1000
 n_batch_size = 128
  
  
-datos_guanacaste = pd.read_csv('datosPrecGuanacaste.csv')
+datos_guanacaste = pd.read_csv('codigo_tesis_carlos/datosPrecGuanacaste.csv')
 datos_guanacaste['lon']=np.round(datos_guanacaste['lon'],3)
 datos_guanacaste['lat']=np.round(datos_guanacaste['lat'],3)
 datos_guanacaste=datos_guanacaste.sort_values('date')
