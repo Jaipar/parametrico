@@ -7,4 +7,3 @@ shapes_files/
 tf_env/
 venv/
 .env/
-.env*/
