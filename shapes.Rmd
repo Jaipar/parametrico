@@ -5,8 +5,39 @@ date: "2025-06-14"
 ---
 
 ```{r Librerías, message = FALSE, warning = FALSE}
-# Cargar librerías
-source("_setup.R")
+# Carga e instala (si no están instalados) los paquetes necesarios
+if (!require("pacman")) install.packages("pacman")
+
+# Manejo y análisis de datos geoespaciales (vectores)
+pacman::p_load(sf)
+
+# Visualización temática de datos espaciales (mapas estáticos y dinámicos)
+pacman::p_load(tmap)
+tmap_mode("plot")
+
+# Manipulación y transformación de datos (data frames y tibbles)
+pacman::p_load(dplyr)
+
+# Escritura y lectura de datos en formato .feather o .parquet
+pacman::p_load(arrow)
+
+# Visualización interactiva de mapas web (basados en Leaflet.js)
+pacman::p_load(leaflet)
+
+# Creación de gráficos estáticos y personalizados (gramática de gráficos)
+pacman::p_load(ggplot2)
+
+# Enlace con servidores CHIRPS
+pacman::p_load(chirps)
+
+# Consultar elevación puntual
+pacman::p_load(elevatr)
+
+# Tratamiento de fechas
+pacman::p_load(lubridate)
+
+# Paletas de colores para gráficos
+pacman::p_load(RColorBrewer)
 ```
 
 ```{r Cargar}
@@ -268,12 +299,12 @@ precipitaciones_santos <-
 precipitaciones <- bind_rows(precipitaciones_norte, precipitaciones_santos)
 
 # Liberar memoria
-rm(precipitaciones_norte,precipitaciones_santos)
+rm(precipitaciones_norte, precipitaciones_santos)
 ```
 
 ```{r Promedio anual}
 # Promedio de precipitaciones anuales por pixel
-chirps_prom <- 
+chirps_prom <-
   precipitaciones %>%
   group_by(region, lon, lat, year) %>%
   summarise(precip_anual = sum(chirps), .groups = "drop") %>%
@@ -304,7 +335,7 @@ rm(chirps_prom, resumen_coords_norte, resumen_coords_santos)
 
 # Se plantea encontrar la sub-grilla n x n que poseen la mayor cantidad de
 #   información disponible (descargada) actualmente.
-# Cuando se identifiquen las coordenadas de los píxeles sin información 
+# Cuando se identifiquen las coordenadas de los píxeles sin información
 #   disponible se procederá con la descarga puntual desde CHIRPS.
 # Con este proceso se pretende ser más eficiente con el almacenamiento.
 
@@ -316,7 +347,7 @@ encontrar_mejor_grilla <- function(grid_full, n = 5) {
   best_sub <- NULL
   best_score <- -Inf
 
-  if (length(lats) < n | length(lons) < n) {
+  if (length(lats) < n || length(lons) < n) {
     warning("Filas o columnas insuficientes para formar una grilla ",
             n, "x", n)
     return(NULL)
@@ -363,24 +394,24 @@ completar_grilla <- function(puntos, res = 0.05, n = 5, plot = TRUE) {
   lats_full <- seq(lat_min, lat_max, by = res)
   lons_full <- seq(lon_min, lon_max, by = res)
   grid_full <- expand.grid(lat = lats_full, lon = lons_full)
-  
+
   # Identificar que puntos YA están descargados
-  grid_full$descargado <- paste(grid_full$lat, grid_full$lon) %in% 
+  grid_full$descargado <- paste(grid_full$lat, grid_full$lon) %in%
     paste(puntos$lat, puntos$lon)
 
   # Encontrar mejor sub-grilla
   mejor_subgrilla <- encontrar_mejor_grilla(grid_full, n)
 
   if (plot && !is.null(mejor_subgrilla)) {
-    plot_subgrilla <- 
+    plot_subgrilla <-
       ggplot(grid_full, aes(lon, lat)) +
       geom_tile(aes(fill = descargado), color = "grey70") +
       scale_fill_manual(values = c("FALSE" = "grey80", "TRUE" = "steelblue")) +
       geom_tile(
-        data = mejor_subgrilla,
-        color = "red",
-        linewidth = 1.2,
-        fill = NA) +
+                data = mejor_subgrilla,
+                color = "red",
+                linewidth = 1.2,
+                fill = NA) +
       coord_fixed() +
       labs(title = paste("Mejor subgrilla", n, "x", n),
            fill = "¿Región con cobertura cafetalera?") +
@@ -398,17 +429,17 @@ completar_grilla <- function(puntos, res = 0.05, n = 5, plot = TRUE) {
 
 # Función para descargar información de CHIRPS de los píxeles restantes de
 #   acuerdo con la función que completa las grillas.
-descargar_puntos_faltantes <- function(puntos, res = 0.05, n = 5, plot = TRUE){
+descargar_puntos_faltantes <- function(puntos, res = 0.05, n = 5, plot = TRUE) {
   # Determinar la mejor grilla con menor información faltante
   mejor_subgrilla <- completar_grilla(puntos, res, n, plot)
-  mejor_subgrilla <- mejor_subgrilla %>% filter( !descargado )
-  
+  mejor_subgrilla <- mejor_subgrilla %>% filter(!descargado)
+
   # Vector de años
   vector_annos <- 2000:2024
 
   # Lista para almacenar datos anuales de puntos faltantes
   lista_faltante <- list()
-  
+
   # Descargar información CHIRPS
   for (i in seq_along(vector_annos)) {
     message("Descargando año ", vector_annos[i])
@@ -436,10 +467,10 @@ descargar_puntos_faltantes <- function(puntos, res = 0.05, n = 5, plot = TRUE){
     # Evitar saturar el servidor ClimateSERV y reducir riesgo de bloqueos
     Sys.sleep(0.5)
   }
-  
+
   # Nombrar lista con años
   names(lista_faltante) <- as.character(vector_annos)
-  
+
   return(lista_faltante)
 }
 
@@ -451,16 +482,16 @@ descargar_puntos_faltantes <- function(puntos, res = 0.05, n = 5, plot = TRUE){
 #   que se puede apreciar visualmente.
 
 # Método de agrupamiento: K-Means
-# Se empleará K-Means sobre una matriz con las variables explicativas de 
+# Se empleará K-Means sobre una matriz con las variables explicativas de
 #   longitud, latitud y altura.
 # Se aplicará un vector de pesos w para asignar más importancia relativa
 #   a las variables de longitud y latitud sobre altura (el doble).
 
 # Función para normalizar matriz de coordenadas geográficas y altura
-# Aplica un vector para escalar columnas según prioridad 
+# Aplica un vector para escalar columnas según prioridad
 kmeans_preparar_data <- function(datos = resumen_coords, pesos = c(2,2,1)){
   pesos <- pesos/sum(pesos)
-  
+
   datos <- 
     datos[,c("lon","lat","elevation")] %>%
     st_drop_geometry() %>%
@@ -623,7 +654,7 @@ if (guardar_datos) {
     resumen_faltantes,
     file = "tablas_precipitaciones.RData"
   )
-  
+
   precipitaciones %>%
     dplyr::select(lon,lat,date,chirps) %>%
     left_join( 
@@ -634,7 +665,7 @@ if (guardar_datos) {
     ) %>%
     dplyr::select(lon, lat, elevation, date, chirps, region) %>%
     write_parquet("tablas_precipitaciones.parquet")
-  
+
   precipitaciones_faltantes_santos %>%
     dplyr::select(lon,lat,date,chirps) %>%
     left_join( 
@@ -645,7 +676,6 @@ if (guardar_datos) {
     ) %>%
     dplyr::select(lon, lat, elevation, date, chirps, region) %>%
     write_parquet("tablas_faltantes.parquet")
-  
 }
 if (cargar_datos) {
   load("tablas_precipitaciones.RData")
