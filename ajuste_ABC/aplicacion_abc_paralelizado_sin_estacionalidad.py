@@ -196,14 +196,14 @@ real =  datos_entrenamiento
 
 def corrida_simulacion(real, cov_original, m, nsites, indicadoras_tiempo, dist_mat,seed):
     filas = []
-    nsimul = 10000
+    nsimul = 25000
     np.random.seed(seed)
     for sss in range(nsimul):
         cov = cov_original
         phi, sigma, ber, beta3, rho = model_prior()
         y_train_gamma_auxiliar = model_prior_cov(cov)
         y_covariables_tiempo = model_prior_cov_tiempo()
-        covariables_tiempo = np.exp(indicadoras_tiempo * y_covariables_tiempo).product(axis=1).values
+        #covariables_tiempo = np.exp(indicadoras_tiempo * y_covariables_tiempo).product(axis=1).values
 
         X_train_auxiliar_D3 = np.zeros((m, nsites))
         X_train_auxiliar_D4 = np.zeros((m, nsites))
@@ -217,7 +217,7 @@ def corrida_simulacion(real, cov_original, m, nsites, indicadoras_tiempo, dist_m
         X1_auxiliar_fijo = simular_bern(m, ber)
 
         for sitio in range(nsites):
-            X3_auxiliar = X3_auxiliar_completo[:, sitio] * covariables_tiempo
+            X3_auxiliar = X3_auxiliar_completo[:, sitio]# * covariables_tiempo
             X2_auxiliar = simular_logAR1(m, phi, sigma)
             X1_auxiliar = simular_bern(m, ber)
             covariables_auxiliar = calculo_covariable(cov[sitio, :], y_train_gamma_auxiliar)
@@ -239,7 +239,7 @@ def corrida_simulacion(real, cov_original, m, nsites, indicadoras_tiempo, dist_m
                 filas.append({
                     'modelo': 'D' + str(s + 3),
                     'covariables': 'M' + str(cov_iter[i] + 1),
-                    'covariables_tiempo': y_covariables_tiempo.tolist(),
+                    #'covariables_tiempo': y_covariables_tiempo.tolist(),
                     'cov': y_train_gamma_auxiliar.tolist(),
                     'phi': phi,
                     'sigma': sigma,
@@ -260,7 +260,7 @@ def corrida_simulacion(real, cov_original, m, nsites, indicadoras_tiempo, dist_m
             filas.append({
                 'modelo': 'D' + str(s + 3),
                 'covariables': 'M1',
-                'covariables_tiempo': y_covariables_tiempo.tolist(),
+                #'covariables_tiempo': y_covariables_tiempo.tolist(),
                 'cov': y_train_gamma_auxiliar.tolist(),
                 'phi': phi,
                 'sigma': sigma,
@@ -292,7 +292,7 @@ with Pool(processes=n_cores) as pool:
 
 # resultados es una lista de listas, podemos unir todo en una sola lista
 filas_totales = [fila for sublist in resultados for fila in sublist]
-pd.DataFrame(filas_totales).to_parquet('resultados_abc_los_santos3.parquet')
+pd.DataFrame(filas_totales).to_parquet('resultados_abc_los_santos_sin_estacionalidad_2.parquet')
 
 
 
