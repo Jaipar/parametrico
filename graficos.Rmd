@@ -9,7 +9,7 @@ date: "2025-11-05"
 source("_setup.R")
 ```
 
-```{r Visualizar1}
+```{r VisualizarPixeles}
 # Visualizar la región Norte sobre mapa de Costa Rica
 leaflet() %>%
   addProviderTiles("CartoDB.Positron") %>%
@@ -44,7 +44,8 @@ pal_altura <- colorBin(
 )
 
 # Gráfico de elevación en la región Norte (ggplot2)
-resumen_coords_norte %>%
+resumen_coords %>%
+  filter(region == "Norte") %>%
   mutate(
     elev_cat = cut(
       elevation,
@@ -67,7 +68,8 @@ resumen_coords_norte %>%
   theme_minimal()
 
 # Gráfico de elevación en la región Norte (leaflet)
-resumen_coords_norte %>%
+resumen_coords %>%
+  filter(region == "Norte") %>%
   leaflet() %>%
   addProviderTiles("CartoDB.Positron") %>%
   addRectangles(
@@ -87,7 +89,8 @@ resumen_coords_norte %>%
   )
 
 # Gráfico de elevación en la región Los Santos (ggplot2)
-resumen_coords_santos %>%
+resumen_coords %>%
+  filter(region == "Los Santos") %>%
   mutate(
     elev_cat = cut(
       elevation,
@@ -110,7 +113,9 @@ resumen_coords_santos %>%
   theme_minimal()
 
 # Gráfico de elevación en la región Los Santos (leaflet)
-leaflet(resumen_coords_santos) %>%
+resumen_coords %>%
+  filter(region == "Los Santos") %>%
+  leaflet() %>%
   addProviderTiles("CartoDB.Positron") %>%
   addRectangles(
     lng1 = ~ lon - 0.05 / 2, lat1 = ~ lat - 0.05 / 2,
@@ -129,7 +134,7 @@ leaflet(resumen_coords_santos) %>%
   )
 ```
 
-```{r Visualizar2}
+```{r VisualizarEnvolvente}
 # Visualizar cobertura cafetalera y rectángulo envolvente de región Norte
 leaflet() %>%
   addTiles() %>%
@@ -149,7 +154,10 @@ leaflet() %>%
   addPolygons(data = cobertura_santos,
               color = "green",
               fillOpacity = 0.3)
+```
 
+
+```{r VisualizarFincas}
 # Paleta de color para precipitaciones diarias
 pal_precipitaciones <- colorNumeric("YlGnBu", domain = c(0, 15))
 
@@ -274,7 +282,7 @@ resumen_coords %>%
     title = "Precipitación anual promedio (mm)"
   )
 
-# Gráfico: Mapa cuadrícula de precipitaciones anuales (1 - Región Norte)
+# Gráfico: Mapa cuadrícula de precipitaciones anuales (1: Región Norte)
 map_norte <-
   resumen_coords %>%
   mutate_grid() %>%
@@ -292,7 +300,7 @@ map_norte <-
   tm_title("Región Norte") +
   tm_layout(legend.text.size = 0.6, legend.title.size = 0.6)
 
-# Gráfico: Mapa cuadrícula de precipitaciones anuales (2 - Región Los Santos)
+# Gráfico: Mapa cuadrícula de precipitaciones anuales (2: Región Los Santos)
 map_santos <-
   resumen_coords %>%
   rowwise() %>%
@@ -366,7 +374,7 @@ resumen_coords %>%
   )
 ```
 
-```{r Visualizar3}
+```{r VisualizarMayores}
 # El siguiente proceso:
 # Identifica el pixel con mayor área de cafetales en cada región
 # Calcula la serie histórica de precipitaciones mensuales
@@ -376,7 +384,8 @@ pixel_norte <- resumen_coords %>%
   filter(region == "Norte") %>%
   slice_max(area, n = 1)
 
-pixel_norte <- precipitaciones_norte %>%
+pixel_norte <- precipitaciones %>%
+  filter(region == "Norte") %>%
   filter(lat == pixel_norte$lat, lon == pixel_norte$lon)
 
 pixel_norte <- pixel_norte %>%
@@ -388,7 +397,8 @@ pixel_santos <- resumen_coords %>%
   filter(region == "Los Santos") %>%
   slice_max(area, n = 1)
 
-pixel_santos <- precipitaciones_santos %>%
+pixel_santos <- precipitaciones %>%
+  filter(region == "Los Santos") %>%
   filter(lat == pixel_santos$lat, lon == pixel_santos$lon)
 
 pixel_santos <- pixel_santos %>%
@@ -406,3 +416,71 @@ pixeles_comparativo %>%
   labs(x = "Fecha", y = "Precipitación (mm)", color = "Región") +
   theme_minimal()
 ```
+
+```{r Visualizar0}
+# Confirmar todos los meses pueden presentar valores de
+# precipitaciones diarias en cero
+precipitaciones %>%
+  mutate(DiaMes = format(date, "%d-%m"), mes = month(date)) %>%
+  group_by(DiaMes, mes, region) %>%
+  summarise(precip.min = min(chirps), .groups = "drop") %>%
+  group_by(region, mes) %>%
+  summarise(cero = sum(precip.min == 0), .groups = "drop")
+  
+
+precipitaciones %>%
+  mutate(mes = month(date)) %>%
+  group_by(region, mes) %>%
+  summarise(
+    cero = sum(chirps == 0),
+    positivo = sum(chirps > 0),
+    total = n(),
+    .groups = "drop"
+  ) %>%
+  mutate(
+    prop_cero = cero / total,
+    prop_positivo = positivo / total
+  ) %>%
+  pivot_longer(
+    cols = c(prop_cero, prop_positivo),
+    names_to = "tipo",
+    values_to = "proporcion"
+  ) +
+  ggplot(x = factor(mes), y = proporcion, fill = tipo) +
+  geom_bar(stat = "identity", position = "stack") +
+  facet_wrap(~region) +
+  labs(
+    x = "Mes",
+    y = "Proporción",
+    fill = "Tipo de precipitación"
+  ) +
+  theme_minimal()
+  
+  
+
+
+precipitaciones %>%
+  mutate(mes = month(date)) %>%
+  group_by(region, mes) %>%
+  summarise(
+    cero = sum(chirps == 0),
+    positivo = sum(chirps > 0),
+    total = n(),
+    proporcion0 = cero / n(),
+    .groups = "drop")
+
+  
+  ggplot(aes(x = date, y = precip.min, color = region)) +
+  geom_line(linewidth = 0.8) +
+  labs(x = "Fecha", y = "Precipitación mínima (mm)", color = "Región") +
+  theme_minimal()
+
+precipitaciones %>%
+  group_by(region, date) %>%
+  summarise(precip.min = min(chirps), .groups = "drop") %>%
+  ggplot(aes(x = date, y = precip.min, color = region)) +
+  geom_line(linewidth = 0.8) +
+  labs(x = "Fecha", y = "Precipitación mínima (mm)", color = "Región") +
+  theme_minimal()
+```
+

@@ -9,7 +9,7 @@ pacman::p_load(tmap)
 tmap_mode("plot")
 
 # Manipulación y transformación de datos (data frames y tibbles)
-pacman::p_load(dplyr)
+pacman::p_load(dplyr, tidyr)
 
 # Escritura y lectura de datos en formato .feather o .parquet
 pacman::p_load(arrow)
