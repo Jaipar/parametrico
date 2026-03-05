@@ -271,7 +271,7 @@ rm(precipitaciones_norte, precipitaciones_santos)
 ```
 
 ```{r Promedio anual}
-# Promedio de precipitaciones anuales por pixel
+# Promedio de precipitaciones anuales por píxel
 chirps_prom <-
   precipitaciones %>%
   group_by(region, lon, lat, year) %>%
@@ -298,7 +298,7 @@ rm(chirps_prom, resumen_coords_norte, resumen_coords_santos)
 ```
 
 ```{r Grillas}
-# La metodología requiere grillas cuadriculadas n x n
+# La metodología KNN-LTSM requiere grillas cuadriculadas n x n
 # La cobertura cafetalera no necesariamente está distribuida en grillas n x n
 
 # Se plantea encontrar la sub-grilla n x n que poseen la mayor cantidad de
@@ -583,20 +583,20 @@ if (descargar_subgrilla) {
       resumen_coords %>%
         filter(region == "Los Santos")
     )
-  save(lista_falt_santos, file = "listas_faltantes.RData")
+  save(lista_falt_santos, file = "pixeles_faltantes.RData")
 }
 if (cargar_subgrilla) {
-  load("listas_faltantes.RData")
+  load("pixeles_faltantes.RData")
 }
 
 # Unir data.frames de precipitaciones anuales restantes
-precipitaciones_faltantes_santos <- # nolint: object_length_linter.
+df_precipitaciones_faltantes_santos <-
   bind_rows(lista_falt_santos, .id = "year") %>%
   mutate(region = "Los Santos#")
 
 # Crear data.frame resumen
-resumen_faltantes <-
-  precipitaciones_faltantes_santos %>%
+resumen_faltantes_santos <-
+  df_precipitaciones_faltantes_santos %>%
   group_by(year, lon, lat, region) %>%
   summarise(precip_anual = sum(chirps), .groups = "drop") %>%
   group_by(region, lon, lat) %>%
@@ -618,9 +618,9 @@ cargar_datos <- TRUE
 if (guardar_datos) {
   save(
     precipitaciones,
-    precipitaciones_faltantes_santos,
+    df_precipitaciones_faltantes_santos,
     resumen_coords,
-    resumen_faltantes,
+    resumen_faltantes_santos,
     file = "tablas_precipitaciones.RData"
   )
 
@@ -638,13 +638,13 @@ if (guardar_datos) {
   precipitaciones_faltantes_santos %>%
     dplyr::select(lon, lat, date, chirps) %>%
     left_join(
-      resumen_faltantes %>%
+      resumen_faltantes_santos %>%
         st_drop_geometry() %>%
         dplyr::select(lon, lat, region, elevation),
       by = c("lon", "lat")
     ) %>%
     dplyr::select(lon, lat, elevation, date, chirps, region) %>%
-    write_parquet("tablas_faltantes.parquet")
+    write_parquet("pixeles_faltantes.parquet")
 }
 if (cargar_datos) {
   load("tablas_precipitaciones.RData")
