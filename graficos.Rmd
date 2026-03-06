@@ -415,6 +415,28 @@ pixeles_comparativo %>%
   geom_line(linewidth = 0.8) +
   labs(x = "Fecha", y = "Precipitación (mm)", color = "Región") +
   theme_minimal()
+
+# Gráfico que muestra evolución de la lluvia diaria
+precipitaciones %>%
+  mutate(dia = yday(date)) %>%
+  group_by(region, dia) %>%
+  summarise(
+    promedio = mean(chirps),
+    q05 = quantile(chirps, 0.05),
+    q95 = quantile(chirps, 0.95),
+    .groups = "drop"
+  ) %>%
+  ggplot(aes(x = dia)) +
+  geom_ribbon(aes(ymin = q05, ymax = q95), fill = "#cfe2ef", alpha = 0.6) +
+  geom_line(aes(y = promedio), color = "#1f78b4", alpha = 0.7) +
+  geom_smooth(aes(y = promedio), 
+              method = "loess",
+              formula = y ~ x,
+              span = 0.05,
+              se = FALSE) +
+  facet_wrap(~region) +
+  theme_minimal() +
+  labs(x = "Día", y = "Precipitaciones (mm)")
 ```
 
 ```{r Visualizar0}
@@ -426,37 +448,54 @@ precipitaciones %>%
   summarise(precip.min = min(chirps), .groups = "drop") %>%
   group_by(region, mes) %>%
   summarise(cero = sum(precip.min == 0), .groups = "drop")
-  
 
 precipitaciones %>%
-  mutate(mes = month(date)) %>%
+  mutate(DiaMes = format(date, "%d-%m"), mes = month(date)) %>%
+  group_by(DiaMes, mes, region) %>%
+  summarise(precip.max = max(chirps), .groups = "drop") %>%
   group_by(region, mes) %>%
-  summarise(
-    cero = sum(chirps == 0),
-    positivo = sum(chirps > 0),
-    total = n(),
-    .groups = "drop"
-  ) %>%
+  summarise(cero = sum(precip.max == 0, na.rm = TRUE), .groups = "drop")
+
+# Proporción de días sin lluvia
+precipitaciones %>%
   mutate(
-    prop_cero = cero / total,
-    prop_positivo = positivo / total
+    mes = month(date),
+    tipo = ifelse(chirps == 0, "cero", "positivo")
   ) %>%
-  pivot_longer(
-    cols = c(prop_cero, prop_positivo),
-    names_to = "tipo",
-    values_to = "proporcion"
-  ) +
-  ggplot(x = factor(mes), y = proporcion, fill = tipo) +
-  geom_bar(stat = "identity", position = "stack") +
+  ggplot(aes(x = factor(mes), fill = tipo)) +
+  geom_bar(position = "fill") +
   facet_wrap(~region) +
-  labs(
-    x = "Mes",
-    y = "Proporción",
-    fill = "Tipo de precipitación"
+  scale_y_continuous(labels = scales::percent) +
+  scale_fill_manual(
+    values = c(
+      "cero" = "#f4bbcc",
+      "positivo" = "#cfe2ef"
+    ),
+    labels = c(
+      "cero" = "(%) Días secos",
+      "positivo" = "(%) Días lluviosos"
+    )
   ) +
+  labs(x = "Mes", y = "%", fill = "") +
   theme_minimal()
+
+# Costa Rica:
+#   Estación lluviosa:
+#     Mayo, Junio, Julio, Agosto, Setiembre, Octubre, Noviembre
+#   Estación seca:
+#     Diciembre, Enero, Febrero, Marzo, Abril
+
+# Según gráfico hay motivos para establecer factores que acompañen a
+#   Grupo Base (seco): 1,2,3,12
+#   Transitorio: 4,11
+#   Lluvioso: 5,6,7,8,9,10
+
+
+           
   
-  
+
+
+
 
 
 precipitaciones %>%
