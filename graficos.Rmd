@@ -1,5 +1,5 @@
 ---
-title: "análisis exploratorio"
+title: "Análisis exploratorio"
 output: html_document
 date: "2025-11-05"
 ---
@@ -7,6 +7,78 @@ date: "2025-11-05"
 ```{r Librerías, message = FALSE, warning = FALSE}
 # Cargar librerías
 source("_setup.R")
+# Cargar precipitaciones
+load("tablas_precipitaciones.RData")
+```
+
+
+```{r Polígonos, message = FALSE, warning = FALSE}
+# Cargar polígono con regiones cafetaleras
+regiones <- st_read("Distribucion_regiones_cafetaleras.shp")
+
+# Cargar polígono con cobertura cafetalera 2017 - 2018
+cobertura <- st_read("Cobertura_cafe_2017-2018.shp")
+
+# Establecer sistema de coordenadas
+regiones <- st_set_crs(regiones, 5367) # EPSG 5367 = CRTM05
+cobertura <- st_set_crs(cobertura, 5367) # EPSG 5367 = CRTM05
+
+# Transformar sistemas de coordenadas
+regiones <- st_transform(regiones, 4326)
+cobertura <- st_transform(cobertura, 4326)
+
+# Corregir geometrías inválidas
+#   Reparar auto-intersecciones:
+#     Si un polígono se cruza a sí mismo, la función puede dividirlo en partes
+#     válidas o recortarlo para eliminar las intersecciones.
+#   Eliminar vértices duplicados:
+#     Borra puntos consecutivos idénticos o muy cercanos que no aportan nada.
+#   Cerrar anillos abiertos:
+#     Si un anillo no está cerrado (el último punto no coincide con el
+#     primero), la función lo cierra automáticamente.
+#   Separar polígonos multi-parte mal formados:
+#     En caso de que geometrías compuestas o multi-polígonos
+#     presenten problemas, se les separa en partes válidas.
+#   Corregir orientación de anillos:
+#     Ajustar la dirección en la que están ordenados los vértices
+#     para cumplir las convenciones.
+if (any(!st_is_valid(regiones))) {
+  regiones <- st_make_valid(regiones)
+}
+if (any(!st_is_valid(cobertura))) {
+  cobertura <- st_make_valid(cobertura)
+}
+
+# Agregar etiqueta con número de región
+regiones <- regiones %>% mutate(etiqueta = paste("Región", row_number()))
+
+# Región Norte
+region_norte <- regiones %>% filter(etiqueta == "Región 5")
+
+# Región Los Santos
+region_santos <- regiones %>% filter(etiqueta == "Región 2")
+
+# Encontrar fincas que están dentro de la zona cafetalera Norte
+cobertura_norte <- cobertura[
+  st_within(cobertura, region_norte, sparse = FALSE)[, 1],
+]
+
+# Encontrar fincas que están dentro de la zona cafetalera Los Santos
+cobertura_santos <- cobertura[
+  st_within(cobertura, region_santos, sparse = FALSE)[, 1],
+]
+
+# Rectángulo que contiene toda la cobertura en la zona cafetalera Norte
+rectangulo_norte <- st_bbox(cobertura_norte)
+
+# Rectángulo que contiene toda la cobertura en la zona cafetalera Los Santos
+rectangulo_santos <- st_bbox(cobertura_santos)
+
+# Rectángulo (Norte) convertido en polígono para gráficos
+rectangulo_norte2 <- st_as_sfc(rectangulo_norte)
+
+# Rectángulo (Los Santos) convertido en polígono para gráficos
+rectangulo_santos2 <- st_as_sfc(rectangulo_santos)
 ```
 
 ```{r VisualizarPixeles}
@@ -449,6 +521,8 @@ precipitaciones %>%
   group_by(region, mes) %>%
   summarise(cero = sum(precip.min == 0), .groups = "drop")
 
+# Confirmar todos los meses pueden presentar valores de
+# precipitaciones distintos de cero
 precipitaciones %>%
   mutate(DiaMes = format(date, "%d-%m"), mes = month(date)) %>%
   group_by(DiaMes, mes, region) %>%
@@ -456,7 +530,7 @@ precipitaciones %>%
   group_by(region, mes) %>%
   summarise(cero = sum(precip.max == 0, na.rm = TRUE), .groups = "drop")
 
-# Proporción de días sin lluvia
+# Proporción de días sin lluvia (mensual)
 precipitaciones %>%
   mutate(
     mes = month(date),
@@ -490,36 +564,110 @@ precipitaciones %>%
 #   Transitorio: 4,11
 #   Lluvioso: 5,6,7,8,9,10
 
+# Proporción de días sin lluvia (diario)
+precipitaciones %>%
+  mutate(
+    doy = lubridate::yday(date),
+    tipo = ifelse(chirps == 0, "cero", "positivo")) %>%
+  ggplot(aes(x = doy, fill = tipo)) +
+  geom_bar(position = "fill") +
+  facet_wrap(~region) +
+  scale_y_continuous(labels = scales::percent) +
+  scale_x_continuous(breaks = seq(0, 365, 60)) +
+  scale_fill_manual(
+    values = c(
+      "cero" = "#f4bbcc",
+      "positivo" = "#cfe2ef"
+    ),
+    labels = c(
+      "cero" = "(%) Días secos",
+      "positivo" = "(%) Días lluviosos"
+    )
+  ) +
+  labs(x = "Día", y = "%", fill = "") +
+  theme(axis.text.x = element_blank(), axis.ticks.x = element_blank()) +
+  theme_minimal()
 
-           
-  
+# Precipitaciones diarias promedio por región
+precipitaciones %>%
+  mutate(doy = lubridate::yday(date)) %>%
+  group_by(region, doy) %>%
+  summarise(precip = mean(chirps), .groups = "drop") %>%
+  ggplot(aes(x = doy, y = precip, color = region)) +
+  geom_line(linewidth = 1, alpha = 0.75) +
+  labs(
+    x = "Día del año",
+    y = "Precipitación promedio diaria (mm)",
+    color = "Región"
+  ) +
+  scale_color_manual(
+    values = c(
+      "Los Santos" = "#1b9e77",
+      "Norte" = "#d95f02")
+    ) +
+  theme_minimal()
 
-
-
-
-
+# Precipitaciones diarias promedio por mes
 precipitaciones %>%
   mutate(mes = month(date)) %>%
   group_by(region, mes) %>%
-  summarise(
-    cero = sum(chirps == 0),
-    positivo = sum(chirps > 0),
-    total = n(),
-    proporcion0 = cero / n(),
-    .groups = "drop")
-
-  
-  ggplot(aes(x = date, y = precip.min, color = region)) +
-  geom_line(linewidth = 0.8) +
-  labs(x = "Fecha", y = "Precipitación mínima (mm)", color = "Región") +
+  summarise(precip = mean(chirps), .groups = "drop") %>%
+  ggplot(aes(x = factor(mes), y = precip, fill = region)) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~region) +
+    labs(
+    x = "Mes",
+    y = "Precipitación (mm)",
+    title = "Precipitación diaria promedio por mes"
+  ) +
+  scale_fill_manual(
+    values = c(
+      "Los Santos" = "#1b9e77",
+      "Norte" = "#d95f02")
+    ) +
   theme_minimal()
+```
 
-precipitaciones %>%
-  group_by(region, date) %>%
-  summarise(precip.min = min(chirps), .groups = "drop") %>%
-  ggplot(aes(x = date, y = precip.min, color = region)) +
-  geom_line(linewidth = 0.8) +
-  labs(x = "Fecha", y = "Precipitación mínima (mm)", color = "Región") +
+```{r}
+ModeloFourier <-
+  precipitaciones %>%
+  mutate(
+    doy = lubridate::yday(date),
+    sin1 = sin(2*pi*doy/365),
+    cos1 = cos(2*pi*doy/365),
+    sin2 = sin(4*pi*doy/365),
+    cos2 = cos(4*pi*doy/365)
+  ) %>%
+  group_by(region) %>%
+  do(model = lm(chirps ~ sin1 + cos1 + sin2 + cos2, data = .))
+
+ejemplo <- 
+  data.frame( doy = 1:365 )
+  mutate( PredictLosSantos = 
+            predict.lm( 
+              object = modelazos$model[[1]],
+              newdata = data.simular ),
+          PredictNorte =
+            predict.lm(
+              object = modelazos$model[[2]],
+              newdata = data.simular )
+  ) 
+  
+
+
+
+  ggplot(aes(x = doy, y = precip, fill = region)) +
+  geom_line(linewidth = 1, alpha = 0.75) +
+  labs(
+    x = "Día del año",
+    y = "Precipitación promedio diaria (mm)",
+    color = "Región"
+  ) +
+  scale_color_manual(
+    values = c(
+      "Los Santos" = "#1b9e77",
+      "Norte" = "#d95f02")
+    ) +
   theme_minimal()
 ```
 
