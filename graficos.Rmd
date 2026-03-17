@@ -641,33 +641,36 @@ ModeloFourier <-
   group_by(region) %>%
   do(model = lm(chirps ~ sin1 + cos1 + sin2 + cos2, data = .))
 
-ejemplo <- 
-  data.frame( doy = 1:365 )
+simulacionModeloFourier <- 
+  data.frame( doy = 1:365 ) %>%
+  mutate( 
+    sin1 = sin(2*pi*doy/365),
+    cos1 = cos(2*pi*doy/365),
+    sin2 = sin(4*pi*doy/365),
+    cos2 = cos(4*pi*doy/365) )
+
+simulacionModeloFourier <-
+  ejemplo %>%
   mutate( PredictLosSantos = 
-            predict.lm( 
-              object = modelazos$model[[1]],
-              newdata = data.simular ),
+            predict.lm(
+              object = ModeloFourier$model[[1]],
+              newdata = ejemplo) %>% 
+            as.vector(),
           PredictNorte =
             predict.lm(
-              object = modelazos$model[[2]],
-              newdata = data.simular )
-  ) 
-  
+              object = ModeloFourier$model[[2]],
+              newdata = ejemplo) %>%
+            as.vector() )
 
-
-
-  ggplot(aes(x = doy, y = precip, fill = region)) +
-  geom_line(linewidth = 1, alpha = 0.75) +
+simulacionModeloFourier %>%
+  ggplot() +
+  geom_line(aes(x = doy, y = PredictLosSantos),
+            color = "#1b9e77", linewidth = 1, alpha = 0.75) +
+  geom_line(aes(x = doy, y = PredictNorte),
+            color = "#d95f02", linewidth = 1, alpha = 0.75) +
   labs(
     x = "Día del año",
     y = "Precipitación promedio diaria (mm)",
-    color = "Región"
-  ) +
-  scale_color_manual(
-    values = c(
-      "Los Santos" = "#1b9e77",
-      "Norte" = "#d95f02")
-    ) +
-  theme_minimal()
+  )
 ```
 
