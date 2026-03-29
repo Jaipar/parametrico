@@ -446,7 +446,7 @@ resumen_coords %>%
   )
 ```
 
-```{r VisualizarMayores}
+```{r VisualizarUmbrales}
 # El siguiente proceso:
 # Identifica el pixel con mayor área de cafetales en cada región
 # Calcula la serie histórica de precipitaciones mensuales
@@ -564,6 +564,32 @@ precipitaciones %>%
 #   Transitorio: 4,11
 #   Lluvioso: 5,6,7,8,9,10
 
+# Proporción de días sin lluvia (mensual, anual)
+precipitaciones %>%
+  mutate(
+    mes = floor_date(date, "month"),
+    anno = year(date),
+    tipo = ifelse(chirps == 0, "cero", "positivo")
+  ) %>%
+  filter( year >= 2022 ) %>%
+  ggplot(aes(x = mes, fill = tipo)) +
+  geom_bar(position = "fill") +
+  facet_wrap(~region) +
+  scale_y_continuous(labels = scales::percent) +
+  scale_fill_manual(
+    values = c(
+      "cero" = "#f4bbcc",
+      "positivo" = "#cfe2ef"
+    ),
+    labels = c(
+      "cero" = "(%) Días secos",
+      "positivo" = "(%) Días lluviosos"
+    )
+  ) +
+  labs(x = "Mes", y = "%", fill = "") +
+  theme_minimal()
+
+
 # Proporción de días sin lluvia (diario)
 precipitaciones %>%
   mutate(
@@ -587,7 +613,10 @@ precipitaciones %>%
   labs(x = "Día", y = "%", fill = "") +
   theme(axis.text.x = element_blank(), axis.ticks.x = element_blank()) +
   theme_minimal()
+```
 
+
+```{r VisualizarPromedios}
 # Precipitaciones diarias promedio por región
 precipitaciones %>%
   mutate(doy = lubridate::yday(date)) %>%
@@ -626,7 +655,81 @@ precipitaciones %>%
       "Norte" = "#d95f02")
     ) +
   theme_minimal()
+
+# Precipitaciones diarias POSITIVAS promedio por mes
+precipitaciones %>%
+  mutate(mes = month(date)) %>%
+  filter( chirps > 0 ) %>%
+  group_by(region, mes) %>%
+  summarise(precip = mean(chirps), .groups = "drop") %>%
+  ggplot(aes(x = factor(mes), y = precip, fill = region)) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~region) +
+    labs(
+    x = "Mes",
+    y = "Precipitación (mm)",
+    title = "Precipitación diaria promedio por mes"
+  ) +
+  scale_fill_manual(
+    values = c(
+      "Los Santos" = "#1b9e77",
+      "Norte" = "#d95f02")
+    ) +
+  theme_minimal()
 ```
+
+
+```{r}
+library(corrplot)
+
+corrplot(
+  correlacion_binaria,
+  method = "color",
+  type = "upper",
+  order = "hclust",
+  tl.cex = 0.5
+)
+
+precipitaciones <- precipitaciones %>%
+  mutate(lluvioso = ifelse(chirps > 0, 1, 0))
+
+df_wide <-
+  precipitaciones %>%
+  unite("pixel", lat, lon, remove = FALSE) %>%
+  select(date, pixel, lluvioso) %>%
+  pivot_wider(names_from = pixel, values_from = lluvioso)
+
+df_wide <- as.matrix(df_wide[,-1])
+
+correlacion_binaria <- cor(df_wide)
+
+library(reshape2)
+
+corr_long <- melt(correlacion_binaria)
+
+ggplot(corr_long, aes(Var1, Var2, fill = value)) +
+  geom_tile() +
+  scale_fill_gradient2(low = "blue", mid = "white", high = "red", midpoint = 0) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_blank(),
+    axis.text.y = element_blank()
+  ) +
+  labs(fill = "Correlación")
+
+
+ggplot(corr_long, aes(x = lon, y = lat, fill = value)) +
+  geom_tile() +
+  scale_fill_viridis_c(name = "P(seco | ref seco)") +
+  coord_fixed() +
+  theme_minimal()
+
+df_wide <- precipitaciones %>%
+  unite("pixel", lat, lon, remove = FALSE) %>%
+  select(date, pixel, seco) %>%
+  pivot_wider(names_from = pixel, values_from = seco)
+```
+
 
 ```{r}
 ModeloFourier <-
@@ -641,6 +744,19 @@ ModeloFourier <-
   group_by(region) %>%
   do(model = lm(chirps ~ sin1 + cos1 + sin2 + cos2, data = .))
 
+ModeloFourierLogit <-
+  precipitaciones %>%
+  mutate(
+    positivo = chirps > 0,
+    doy = lubridate::yday(date),
+    sin1 = sin(2*pi*doy/365),
+    cos1 = cos(2*pi*doy/365),
+    sin2 = sin(4*pi*doy/365),
+    cos2 = cos(4*pi*doy/365)
+  ) %>%
+  group_by(region) %>%
+  do(model = glm(positivo ~ sin1 + cos1 + sin2 + cos2, data = ., "binomial"))
+
 simulacionModeloFourier <- 
   data.frame( doy = 1:365 ) %>%
   mutate( 
@@ -650,17 +766,31 @@ simulacionModeloFourier <-
     cos2 = cos(4*pi*doy/365) )
 
 simulacionModeloFourier <-
-  ejemplo %>%
+  simulacionModeloFourier %>%
   mutate( PredictLosSantos = 
             predict.lm(
               object = ModeloFourier$model[[1]],
-              newdata = ejemplo) %>% 
+              newdata = simulacionModeloFourier) %>% 
             as.vector(),
           PredictNorte =
             predict.lm(
               object = ModeloFourier$model[[2]],
-              newdata = ejemplo) %>%
-            as.vector() )
+              newdata = simulacionModeloFourier) %>%
+            as.vector(),
+          PredictLogitLosSantos =
+            predict.glm(
+              object = ModeloFourierLogit$model[[1]],
+              newdata = simulacionModeloFourier,
+              type = "response") %>% 
+            as.vector(),
+          PredictLogitNorte =
+            predict.glm(
+              object = ModeloFourierLogit$model[[2]],
+              newdata = simulacionModeloFourier,
+              type = "response"
+              ) %>% 
+            as.vector()
+          )
 
 simulacionModeloFourier %>%
   ggplot() +
@@ -672,5 +802,18 @@ simulacionModeloFourier %>%
     x = "Día del año",
     y = "Precipitación promedio diaria (mm)",
   )
+
+simulacionModeloFourier %>%
+  ggplot() +
+  geom_line(aes(x = doy, y = PredictLogitLosSantos),
+            color = "#1b9e77", linewidth = 1, alpha = 0.75) +
+  geom_line(aes(x = doy, y = PredictLogitNorte),
+            color = "#d95f02", linewidth = 1, alpha = 0.75) +
+  labs(
+    x = "Día del año",
+    y = "Precipitación promedio diaria (mm)",
+  )
+
+summary(ModeloFourierLogit$model[[1]])
 ```
 
