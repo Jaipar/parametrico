@@ -1,9 +1,17 @@
-.Rhistory
-.Rproj.user/
-*.RData
-*.html
-*.parquet
-shapes_files/
+# Entornos virtuales
 tf_env/
 venv/
 .env/
+
+# Archivos temporales del sistema
+.vscode/
+.Rhistory
+.Rproj.user/
+__pycache__/
+*.py[cod]
+
+# Datos grandes
+*.parquet
+*.RData
+*.html
+*.png
