@@ -9,6 +9,7 @@ venv/
 .Rproj.user/
 __pycache__/
 *.py[cod]
+shapes_files/
 
 # Datos grandes
 *.parquet
