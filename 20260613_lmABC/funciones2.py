@@ -68,7 +68,7 @@ def filtrar_df_errores_por_percentil_agrupado(df, columna_error, p = 0.05):
 # datos_pivot: se procede a calcular medidas de error en caso de existir datos reales para comparar
 
 # Note que alpha_(s,t) es determínistico y X_1t(s), X_2t(s) y X_3t(s) varían por simulación
-def corrida_simulacion_exp_errores(m, nsites, dist_mat, D_elegido, M_elegido, dt_parametros, p = 0.01, id_simulacion = None, datos_pivot = None):
+def corrida_simulacion_exp_errores(m, nsites, dist_mat, D_elegido, M_elegido, dt_parametros, p = 0.01, id_simulacion = None, datos_pivot = None, boolean_imprimir = True):
     # Filtrar data.frame de parámetros para el modelo específico seleccionado y el percentil de error elegido
     dt_parametros = filtrar_df_modelo_especifico(dt_parametros, D_elegido, M_elegido, "errorMSE", p)
     n_conjunto_parametros = dt_parametros.shape[0]
@@ -83,7 +83,8 @@ def corrida_simulacion_exp_errores(m, nsites, dist_mat, D_elegido, M_elegido, dt
     errorSWD = dt_parametros["errorSWD"].iloc[0]
     delta, phi, sigma, beta3, rho = dt_parametros[["delta", "phi", "sigma", "beta3", "rho"]].iloc[0]
 
-    print(f"Calibración con errorMSE:: {errorMSE:.2f}, errorSWD:: {errorSWD:.2f}, delta: {delta}, phi: {phi}, sigma: {sigma}, beta3: {beta3}, rho: {rho}")
+    if boolean_imprimir:
+        print(f"Calibración con errorMSE:: {errorMSE:.2f}, errorSWD:: {errorSWD:.2f}, delta: {delta}, phi: {phi}, sigma: {sigma}, beta3: {beta3}, rho: {rho}")
 
     # Procesos comunes para todos los sitios
     X1_auxiliar_fijo = simular_X1(m, delta).reshape(m, 1) # m x 1
@@ -113,33 +114,33 @@ def corrida_simulacion_exp_errores(m, nsites, dist_mat, D_elegido, M_elegido, dt
         errorMSE = mse(X_train_auxiliar, real)
         errorMAE = mae(X_train_auxiliar, real)
         errorSWD = sliced_wasserstein(X_train_auxiliar, real)
-        print(f"Simulación con:: MSE: {errorMSE:.2f}, MAE: {errorMAE:.2f}, SWD: {errorSWD:.2f}")
+        if boolean_imprimir:
+            print(f"Simulación con:: MSE: {errorMSE:.2f}, MAE: {errorMAE:.2f}, SWD: {errorSWD:.2f}")
 
     return X_train_auxiliar
 
-# Métricas de error para la trayectoria esperada de las precipitaciones 
-def metricas_error_presimulaciones(datos_prepivot):
-    # Datos en escala original
-    Y_pred = datos_prepivot.pivot(index='date', columns=['lat','lon'], values='Y_pred')
-    chirps = datos_prepivot.pivot(index='date', columns=['lat','lon'], values='chirps')
-    errorMSE = mse(Y_pred.values, chirps.values)
-    errorMAE = mae(Y_pred.values, chirps.values)
-    errorSWD = sliced_wasserstein(Y_pred.values, chirps.values)
-    print(f"Regresión lineal con:: MSE: {errorMSE:.2f}, MAE: {errorMAE:.2f}, SWD: {errorSWD:.2f}")
-
 # datos_pivot: REQUERIDO! Indica trayectoria esperada de las precipitaciones
-def corrida_simulacion_precipitaciones(m, nsites, dist_mat, D_elegido, M_elegido, dt_parametros, p = 0.01, id_simulacion = None, datos_prepivot = None):
+def corrida_simulacion_precipitaciones(m, nsites, dist_mat, D_elegido, M_elegido, dt_parametros, p = 0.01, id_simulacion = None, datos_prepivot = None, boolean_imprimir = True):
     logY_pred = datos_prepivot.pivot(index='date', columns=['lat','lon'], values='logY_pred')
-    exp_simulacion_errores = corrida_simulacion_exp_errores(m, nsites, dist_mat, D_elegido, M_elegido, dt_parametros, p, id_simulacion)
+    exp_simulacion_errores = corrida_simulacion_exp_errores(m, nsites, dist_mat, D_elegido, M_elegido, dt_parametros, p, id_simulacion, boolean_imprimir = boolean_imprimir)
     simulaciones_precitaciones = np.exp(logY_pred.values) * exp_simulacion_errores - 1
     return simulaciones_precitaciones
 
-def metricas_error_simulaciones(simulaciones, datos_prepivot):
+def return_metricas_error(estimaciones, chirps, calcular_swd=True):
+    return mse(estimaciones, chirps), mae(estimaciones, chirps), sliced_wasserstein(estimaciones, chirps) if calcular_swd else np.nan
+
+# Métricas de error para la trayectoria esperada de las precipitaciones 
+def print_metricas_error_presimulaciones(datos_prepivot):
     # Datos en escala original
-    chirps = datos_prepivot.pivot(index='date', columns=['lat','lon'], values='chirps')
-    errorMSE = mse(simulaciones, chirps.values)
-    errorMAE = mae(simulaciones, chirps.values)
-    errorSWD = sliced_wasserstein(simulaciones, chirps.values)
+    Y_pred = datos_prepivot.pivot(index='date', columns=['lat','lon'], values='Y_pred').values
+    chirps = datos_prepivot.pivot(index='date', columns=['lat','lon'], values='chirps').values
+    errorMSE, errorMAE, errorSWD = return_metricas_error(Y_pred, chirps)
+    print(f"Regresión lineal con:: MSE: {errorMSE:.2f}, MAE: {errorMAE:.2f}, SWD: {errorSWD:.2f}")
+
+def print_metricas_error_simulaciones(simulaciones, datos_prepivot):
+    # Datos en escala original
+    chirps = datos_prepivot.pivot(index='date', columns=['lat','lon'], values='chirps').values
+    errorMSE, errorMAE, errorSWD = return_metricas_error(simulaciones, chirps)
     print(f"Simulación con:: MSE: {errorMSE:.2f}, MAE: {errorMAE:.2f}, SWD: {errorSWD:.2f}")
 
 def asignar_coords_a_simulacion(simulaciones, datos_pivot, fechas = None):
@@ -158,5 +159,65 @@ def asignar_coords_a_simulacion(simulaciones, datos_pivot, fechas = None):
 
     return df
 
+def corrida_n_simulaciones_precipitaciones(m, nsites, dist_mat, D_elegido, M_elegido, 
+                                           dt_parametros,  n_simulaciones = 100, semilla_inicial = 1000, p = 0.01,
+                                           datos_prepivot = None, boolean_imprimir = False):
+    # Filtrar data.frame de parámetros para el modelo específico seleccionado y el percentil de error elegido
+    n_conjunto_parametros = filtrar_df_modelo_especifico(dt_parametros, D_elegido, M_elegido, "errorMSE", p).shape[0]
+    
+    # Semillas para obtener id_filas en generación de simulaciones
+    semillas = np.arange(semilla_inicial, semilla_inicial + n_simulaciones)
+    
+    simulaciones = np.zeros((n_simulaciones, m, nsites))
+    for i in range(n_simulaciones):
+        seed = semillas[i]
+        rng = np.random.default_rng(seed)
 
+        id_parametro = rng.integers(0, n_conjunto_parametros)
+        simulaciones[i, :, :] = corrida_simulacion_precipitaciones(m, nsites, dist_mat, D_elegido, M_elegido, dt_parametros, p, id_parametro, datos_prepivot, boolean_imprimir)
 
+    return simulaciones
+
+def comparar_test_DyM(test_prepivot, m, nsites, dist_mat, dt_parametros, n_simulaciones=1000, p=0.01, calcular_swd=False):
+    chirps = test_prepivot.pivot(index='date', columns=['lat','lon'], values='chirps').values
+    filas_metricas = []
+
+    modelosDyM = dt_parametros[["modelo","covariables"]].drop_duplicates().sort_values(["modelo","covariables"])
+
+    for _, fila in modelosDyM.iterrows():
+        D = fila["modelo"]
+        M = fila["covariables"]
+
+        simulaciones = corrida_n_simulaciones_precipitaciones(
+            m, nsites, dist_mat, D, M,
+            dt_parametros, n_simulaciones,
+            p=p, datos_prepivot=test_prepivot
+        )
+    
+        for i in range(n_simulaciones):
+            errorMSE, errorMAE, errorSWD = return_metricas_error(simulaciones[i, :, :], chirps, calcular_swd)
+            filas_metricas.append({
+            "D": D,
+            "M": M,
+            "errorMSE": errorMSE,
+            "errorMAE": errorMAE,
+            "errorSWD": errorSWD
+            })
+            
+    metricas = pd.DataFrame(filas_metricas)
+    resumen = (
+        metricas
+        .groupby(["D", "M"])
+        .agg(
+            MSE_mean=("errorMSE", "mean"),
+            MSE_std=("errorMSE", "std"),
+            MAE_mean=("errorMAE", "mean"),
+            MAE_std=("errorMAE", "std"),
+            SWD_mean=("errorSWD", "mean"),
+            SWD_std=("errorSWD", "std"),
+        )
+        .reset_index()
+        .sort_values("MSE_mean")
+    )
+
+    return resumen
