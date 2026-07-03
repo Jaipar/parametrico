@@ -238,14 +238,14 @@ def procesamiento_matriz_diseno(datos, poly, scaler):
 
     return X_full
 
-def simular_X1(n, beta1, nsites=1):
-    X1 = (np.random.exponential(scale=1,size=(n,nsites))**beta1)/xgamma(1+beta1)
-    return X1
+#def simular_X1(n, beta1, nsites=1):
+#    X1 = (np.random.exponential(scale=1,size=(n,nsites))**beta1)/xgamma(1+beta1)
+#    return X1
 
 # Cálculo de proceso X_1t(s) con distribución Lognormal
-#def simular_X1(n, delta, nsites=1):
-#    X1 = np.random.lognormal(mean=0, sigma=delta, size=(n, nsites))
-#    return X1/np.exp((delta**2)/2)
+def simular_X1(n, delta, nsites=1):
+    X1 = np.random.lognormal(mean=0, sigma=delta, size=(n, nsites))
+    return X1/np.exp((delta**2)/2)
 
 # Cálculo de proceso AR(1) para X_2t(s)
 def simular_logAR1(n, phi, sigma, nsites=1):
@@ -268,8 +268,9 @@ def simular_X3(n, rho, beta3, nsites, dist_mat):
 # Previas para parámetros del modelo (phi, sigma, beta3, rho)
 def previa_modelo(rho_upper_range):
     # Beta1: Weibull
-    beta1_auxiliar = np.random.uniform(0.05,0.95)
-    # delta_auxiliar = np.random.uniform(0,3)
+    # beta1_auxiliar = np.random.uniform(0.05,0.95)
+    # Delta: Desviación estándar del proceso Lognormal para X_1t(s)
+    delta_auxiliar = np.random.uniform(0,3)
     # Phi: Grado de autocorrelación temporal AR(1) para X_2t(s)
     phi_auxiliar = np.random.uniform(-0.85,0.85)
     # Sigma: Desviación estándar del proceso logAR(1) para X_2t(s)
@@ -279,8 +280,7 @@ def previa_modelo(rho_upper_range):
     # Rho: Parámetro de la correlación espacial de X_3t(s)
     rho_auxiliar =  np.random.uniform(0,rho_upper_range)
 
-    y_train_auxiliar = [#delta_auxiliar,
-                        beta1_auxiliar,
+    y_train_auxiliar = [delta_auxiliar,
                         phi_auxiliar,
                         sigma_auxiliar,
                         beta3_auxiliar,

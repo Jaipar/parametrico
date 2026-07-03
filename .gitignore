@@ -2,6 +2,8 @@
 tf_env/
 venv/
 .env/
+*.pkl
+*.joblib
 
 # Archivos temporales del sistema
 .vscode/
