@@ -16,9 +16,9 @@ n_obs = 120
 n = n_sitios * n_obs
 
 # Coordenadas de cada sitio
-lon_sitios = rng.uniform(-1, -0.5, size=n_sitios)
-lat_sitios = rng.uniform(0.5, 1, size=n_sitios)
-oscilacion_base = np.sin(np.linspace(0, 2*np.pi, n_obs))
+lon_sitios = rng.uniform(-2, -1.5, size=n_sitios)
+lat_sitios = rng.uniform(1.5, 2.5, size=n_sitios)
+oscilacion_base = np.sin(2*np.pi*np.arange(0, n_obs)/12)
 
 X = pd.DataFrame({
     "intercepto": np.ones(n),
