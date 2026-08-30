@@ -371,17 +371,16 @@ def comprobar_dimensiones_ubic(ubic, datos_pivot):
     check_lon = cols.get_level_values(1).values == ubic['lon'].values
     return (check_lat & check_lon).all()
 
-# Construir la distribución previa para el modelo ABC-SMC a partir de los parámetros estimados del modelo GLM
-def construir_previa_glm_abc(GLM0, c=10):
-    gamma_hat = GLM0.params.values.astype(float)
-    cov_gamma = GLM0.cov_params().values.astype(float)
+# Construir parámetros de la distribución previa del modelo ABC-SMC mediante GLM
+def construir_parametros_previa_glm(GLM0, n_extra=3, c=10):
+    gamma_hat = GLM0.params.to_numpy()
+    cov_gamma = GLM0.cov_params().to_numpy()
     cov_gamma = (c**2) * cov_gamma
 
     ngammas = len(gamma_hat)
-    n_extra = 3
     nparametros = ngammas + n_extra
 
-    # Parámetros parte de alpha(s,t) (gammas)
+    # Coeficientes de alpha(s,t) (gammas)
     mu_0 = np.zeros(nparametros)
     mu_0[:ngammas] = gamma_hat
 
@@ -391,7 +390,7 @@ def construir_previa_glm_abc(GLM0, c=10):
 
     return mu_0, cov_matriz_0
 
-# Transormar parámetros de theta a los parámetros del modelo ABC-SMC
+# Transformar parámetros de theta a los parámetros del modelo ABC-SMC
 def transformar_parametros_abc(theta, ngammas, rho_upper_range):
     delta_max_range = 3
     beta3_min_range = 2
