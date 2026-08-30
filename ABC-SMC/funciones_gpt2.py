@@ -5,6 +5,7 @@ import statsmodels.api as sm
 from multiprocessing import get_context
 from scipy.linalg import cholesky, solve_triangular
 from scipy.special import gammaincinv, logsumexp, ndtr
+from scipy.special import gamma as gamma_function
 from scipy.spatial.distance import cdist, pdist, squareform
 from scipy.stats import gamma, norm, multivariate_normal, wasserstein_distance
 from sklearn.preprocessing import PolynomialFeatures, StandardScaler, MinMaxScaler
@@ -253,6 +254,7 @@ columnas_no_polinomicas = ['elevation', 'sin_1', 'cos_1', 'sin_2', 'cos_2', 'ENS
 # Columnas seleccionadas para la matriz de diseño
 columnas_matriz_diseno = ['lat', 'lon', 'month']
 
+# Construir matriz de diseño
 def procesamiento_matriz_diseno(datos, poly, scaler):
     # Terminos polinomiales de latitud y longitud
     X_poly = poly.transform(datos[columnas_polinomicas])
@@ -283,82 +285,91 @@ def procesamiento_matriz_diseno(datos, poly, scaler):
 
     return X_design
 
+# Modelo GLM sobre Y+1
 def calibrar_modelo_GLM(train, print_summary=False, poly=None, scaler=None):
-    if poly is None or scaler is None:
-        poly, scaler = preprocesamiento_escalar_datos(train)
     X_design = procesamiento_matriz_diseno(train, poly, scaler)
-
     Y_plus = train['chirps'] + 1
+
     model_GLM = sm.GLM(Y_plus, X_design, family=sm.families.Gamma(link=sm.families.links.log())).fit()
+
     if print_summary:
         print(model_GLM.summary())
 
     return model_GLM
 
+# Incluir columnas de predicciones y residuos del modelo GLM para el conjunto de entrenamiento
 def GLM_predicciones_residuos_train(train, model_GLM):
     Y_plus = train['chirps'] + 1
     Y_plus_pred = model_GLM.fittedvalues
-    RatioY = Y_plus/Y_plus_pred
-
+    Y_resid = model_GLM.resid_response
+    Y_ratio = Y_plus/Y_plus_pred
+    
     result_df = pd.DataFrame({
         "Y_plus": Y_plus,
         "Y_plus_pred": Y_plus_pred,
-        "exp_residuos": RatioY,
-    }, index=train.index)
+        "Y_resid": Y_resid,
+        "Y_ratio": Y_ratio,
+    })
 
     return pd.concat([train, result_df], axis=1)
 
+# Incluir columnas de predicciones y residuos del modelo GLM para el conjunto de prueba
 def GLM_predicciones_residuos_test(test, poly, scaler, model_GLM):
     X_design = procesamiento_matriz_diseno(test, poly, scaler)
 
     Y_plus = test['chirps'] + 1
     Y_plus_pred = model_GLM.predict(X_design).values
-    RatioY = Y_plus/Y_plus_pred
+    Y_resid = model_GLM.resid_response
+    Y_ratio = Y_plus/Y_plus_pred
 
     result_df = pd.DataFrame({
         "Y_plus": Y_plus,
         "Y_plus_pred": Y_plus_pred,
-        "exp_residuos": RatioY,
-    }, index=test.index)
+        "Y_resid": Y_resid,
+        "Y_ratio": Y_ratio
+    })
 
     return pd.concat([test, result_df], axis=1)
 
-# Calculo de proceso X_1t(s) con distribución marginal lognormal con media 1 y desviación estándar delta
+# Cálculo del proceso X_1t(s) con distribución marginal Lognormal
 def simular_X1(n, delta, nsites=1, rng=None):
     if rng is None:
         rng = np.random.default_rng()
-    return rng.lognormal(mean=-(delta**2)/2, sigma=delta, size=(n, nsites))
 
-# Calculo de proceso X_3t(s) con cópula subyacente C_X_3 y distribución marginal F_3 con media 1 y cola regular (Gamma Inversa)
+    lognormal = rng.lognormal(mean=0, sigma=delta, size=(n, nsites))
+    return lognormal / np.exp(delta**2 / 2)
+
+# Calculo de proceso X_1t(s) con distribución marginal Weibull
+def simular_X1(n, k, nsites=1, rng=None):
+    if rng is None:
+        rng = np.random.default_rng()
+
+    weibull = rng.weibull(k, size=(n, nsites))
+    return weibull / gamma_function(1 + 1/k)
+
+# Calculo de proceso X_3t(s) con cópula subyacente C_X_3 y distribución marginal Gamma Inversa
 def simular_X3(n, rho, beta3, nsites, dist_mat, rng=None):
     if rng is None:
         rng = np.random.default_rng()
 
     Sigma = np.exp(-dist_mat / rho)
-    Sigma.flat[::nsites + 1] += 1e-10
-    factor_cholesky = cholesky(Sigma, lower=True, check_finite=False)
-    Gauss = rng.standard_normal((n, nsites)) @ factor_cholesky.T
-    Gamma = gammaincinv(beta3, ndtr(Gauss))
+    Gauss = rng.multivariate_normal.rvs(mean=np.zeros(nsites), cov=Sigma, size=n)
+    Gamma = gamma.ppf(norm.cdf(Gauss), a=beta3, scale=1)
     return (beta3 - 1) / Gamma
 
-# Generar muestras de parámetros a partir de una distribución normal multivariada
+# Distribución normal multivariada para distribucion previa
 def model_prior_mvnormal(n_muestras, vector_mu, cov_matriz, rng=None):
-    # Generar muestras de parámetros a partir de una distribución normal multivariada
     if rng is None:
         rng = np.random.default_rng()
-    muestras = rng.multivariate_normal(mean=vector_mu, cov=cov_matriz, size=n_muestras)
-    return np.atleast_2d(muestras)
+    muestras_previa = rng.multivariate_normal(mean=vector_mu, cov=cov_matriz, size=n_muestras)
+    return muestras_previa
 
-# Comprobar si las dimensiones de ubicaciones coinciden con las columnas de datos pivot
+# Comprobar si las dimensiones de ubicaciones coincidan en el mismo orden (después de pivotear)
 def comprobar_dimensiones_ubic(ubic, datos_pivot):
     cols = datos_pivot.columns
-    
-    check = (
-        (cols.get_level_values(0).values == ubic['lat'].values) &
-        (cols.get_level_values(1).values == ubic['lon'].values)
-    )
-
-    return check.all()
+    check_lat = cols.get_level_values(0).values == ubic['lat'].values
+    check_lon = cols.get_level_values(1).values == ubic['lon'].values
+    return (check_lat & check_lon).all()
 
 # Construir la distribución previa para el modelo ABC-SMC a partir de los parámetros estimados del modelo GLM
 def construir_previa_glm_abc(GLM0, c=10):
