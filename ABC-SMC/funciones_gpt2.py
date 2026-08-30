@@ -11,6 +11,7 @@ from sklearn.preprocessing import PolynomialFeatures, StandardScaler, MinMaxScal
 from datetime import datetime
 import os
 
+# Incluir columnas de fenómeno ENSO (El Niño, La Niña, Neutral)
 def importar_ENSO():
     url = "https://psl.noaa.gov/data/correlation/oni.data"
     
@@ -50,18 +51,15 @@ def importar_ENSO():
 
     df = df.sort_values(["year", "month"]).reset_index(drop=True)
 
-    # Condiciones para fenómeno Niño o Niña, mayores o menores a +- 0.5
-    condiciones = np.where(df["ONI"] >= 0.5, 1,
-                   np.where(df["ONI"] <= -0.5, -1, 0))
-    df["signal"] = condiciones
-
-    # Condiciones para fenómeno Niño o Niña, cinco o más períodos sobrelapados
+    # Identificar ONI mayores o menores a +- 0.5
+    df["signal"] = np.where(df["ONI"] >= 0.5, 1, np.where(df["ONI"] <= -0.5, -1, 0))
+    # Identificar rachas de señales consecutivas iguales
     df["grupo"] = (df["signal"] != df["signal"].shift()).cumsum()
 
     # Contar longitud de cada racha
     tamaños = df.groupby("grupo")["signal"].transform("size")
 
-    # Clasificación final
+    # Condiciones para fenómeno Niño o Niña: Cinco o más períodos sobrelapados con ONI >= 0.5 o ONI <= -0.5 
     def clasificar(row):
         if row["signal"] == 1 and tamaños[row.name] >= 5:
             return "El Niño"
@@ -94,6 +92,30 @@ def mse(X, Y):
 def mae(X, Y):
     return np.mean(np.abs(X - Y))
 
+# Métrica de error cuadrático cuantílico promedio (ECCP)
+def error_cuadratico_cuantilico(X, Y):
+    c = 10 # Número de cuantiles en cada extremo
+    cuantiles = np.concatenate([np.arange(1, c + 1),np.arange(100 - c, 100)]) / 100
+
+    q_X = np.quantile(X, cuantiles, axis=0)
+    q_Y = np.quantile(Y, cuantiles, axis=0)
+
+    eccp = mse(q_X, q_Y)
+    return eccp
+
+# Métrica de error absoluto cuantílico promedio (EACP)
+def error_absoluto_cuantilico(X, Y):
+    c = 10 # Número de cuantiles en cada extremo
+    cuantiles = np.concatenate([np.arange(1, c + 1),np.arange(100 - c, 100)]) / 100
+
+    q_X = np.quantile(X, cuantiles, axis=0)
+    q_Y = np.quantile(Y, cuantiles, axis=0)
+
+    eacp = mae(q_X, q_Y)
+    return eacp
+
+
+######## Funciones por borrar
 def preparar_metricas_colas(X, meses, cuantil_umbral=0.90):
     p_cola = np.linspace(cuantil_umbral, 0.99, 10)
     cuantiles_cola_mes = np.empty((12, 10), dtype=float)
@@ -132,7 +154,9 @@ def error_exceder_umbral(Y, meses, umbrales_ubicaciones_mes, proporciones_excede
         errores_mensuales[mes - 1] = mse(X_mes, Y_mes)
 
     return np.mean(errores_mensuales)
+######### Fin funciones por borrar
 
+# Preparar datos para una región específica, incluyendo precipitación mensual y covariables espaciales
 def preparar_datos_region(datos, region):
     # Filtrar por región
     datos_region = datos.loc[datos['region'] == region].copy()
@@ -171,6 +195,7 @@ def preparar_datos_region(datos, region):
 
     return datos_region
 
+# Dividir los datos en conjuntos de entrenamiento y prueba
 def dividir_train_test(datos, ubic, nsites, fecha_corte, frac=0.75, seed=1234):
     # Seleccionar aleatoriamente un subconjunto de ubicaciones para entrenamiento    
     n_ubic_train = int(frac * nsites)
@@ -191,6 +216,7 @@ def dividir_train_test(datos, ubic, nsites, fecha_corte, frac=0.75, seed=1234):
 
     return datos_train, datos_test, m_train
 
+# Obtener conjunto de ubicaciones únicas, número de sitios y matriz de distancias entre ubicaciones
 def parametros_ubicaciones(datos):
     # Combinaciones únicas de latitud y longitud
     ubic = (
@@ -207,6 +233,7 @@ def parametros_ubicaciones(datos):
 
     return ubic, nsites, dist_mat
 
+# Constructor de objetos para calcular términos polinomiales y estandarización de datos
 def preprocesamiento_escalar_datos(train):
     poly = PolynomialFeatures(degree=2, include_bias=False)
     scaler = StandardScaler()
@@ -223,7 +250,8 @@ def preprocesamiento_escalar_datos(train):
 
 columnas_polinomicas = ['lat', 'lon']
 columnas_no_polinomicas = ['elevation', 'sin_1', 'cos_1', 'sin_2', 'cos_2', 'ENSO', 'month']
-columnas_matriz_diseno = ['lat', 'lon', 'ENSO', 'month']
+# Columnas seleccionadas para la matriz de diseño
+columnas_matriz_diseno = ['lat', 'lon', 'month']
 
 def procesamiento_matriz_diseno(datos, poly, scaler):
     # Terminos polinomiales de latitud y longitud
