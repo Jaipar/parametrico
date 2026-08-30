@@ -390,31 +390,54 @@ def construir_parametros_previa_glm(GLM0, n_extra=3, c=10):
 
     return mu_0, cov_matriz_0
 
-# Transformar parámetros de theta a los parámetros del modelo ABC-SMC
-def transformar_parametros_abc(theta, ngammas, rho_upper_range):
-    delta_max_range = 3
-    beta3_min_range = 2
-    beta3_max_range = 150
+# Transformar valores del vector theta en las escalas requeridas para la generación aleatoria (v1)
+def transformar_theta_v1(theta, ngammas, rho_upper_range):
+    X1_param_max_range = 3
+    X3_param_min_range = 2
+    X3_param_max_range = 150
 
     gamma_params = theta[:ngammas]
-    delta = delta_max_range * norm.cdf(theta[ngammas])
-    beta3 = beta3_min_range + (beta3_max_range - beta3_min_range) * norm.cdf(theta[ngammas + 1])
+    X1_param = X1_param_max_range * norm.cdf(theta[ngammas])
+    X3_param = X3_param_min_range + (X3_param_max_range - X3_param_min_range) * norm.cdf(theta[ngammas + 1])
     rho = rho_upper_range * norm.cdf(theta[ngammas + 2])
-    return gamma_params, delta, beta3, rho
+    return gamma_params, X1_param, X3_param, rho
 
-# Simular precipitaciones a partir de los parámetros del modelo ABC-SMC
-def simular_precipitacion_abc(theta, m, nsites, dist_mat, design_mat, ngammas, rho_upper_range, rng=None):
-    gamma_params, delta, beta3, rho = transformar_parametros_abc(theta, ngammas, rho_upper_range)
+# Transformar valores del vector theta en las escalas requeridas para la generación aleatoria (v2)
+def transformar_theta_v2(theta, ngammas, rho_upper_range):
+    X3_param_min_range = 2
+    X3_param_max_range = 150
+
+    gamma_params = theta[:ngammas]
+    X3_param = X3_param_min_range + (X3_param_max_range - X3_param_min_range) * norm.cdf(theta[ngammas + 0])
+    rho = rho_upper_range * norm.cdf(theta[ngammas + 1])
+    return gamma_params, X3_param, rho
+
+# Simular precipitaciones (v1)
+def simular_precipitacion_v1(theta, m, nsites, dist_mat, design_mat, ngammas, rho_upper_range, rng=None):
+    gamma_params, delta, beta3, rho = transformar_theta_v1(theta, ngammas, rho_upper_range)
 
     alpha_long = np.exp(design_mat @ gamma_params)
     alpha = alpha_long.reshape(nsites, m).T # m x nsites
 
-    X1 = simular_X1(m, delta, nsites=1, rng=rng) # m x 1
-    X3 = simular_X3(m, rho, beta3, nsites, dist_mat, rng=rng) # m x nsites
+    X1 = simular_X1(m, delta, 1, rng) # m x 1. Constante por ubicación
+    X3 = simular_X3(m, rho, beta3, nsites, dist_mat, rng) # m x nsites
     Y_sim = alpha * X1 * X3 - 1 # m x nsites
 
     return Y_sim
 
+# Simular precipitaciones (v2)
+def simular_precipitacion_v2(theta, m, nsites, dist_mat, design_mat, ngammas, rho_upper_range, rng=None):
+    gamma_params, beta3, rho = transformar_theta_v2(theta, ngammas, rho_upper_range)
+
+    alpha_long = np.exp(design_mat @ gamma_params)
+    alpha = alpha_long.reshape(nsites, m).T # m x nsites
+
+    X3 = simular_X3(m, rho, beta3, nsites, dist_mat, rng) # m x nsites
+    Y_sim = alpha * X3 - 1 # m x nsites
+
+    return Y_sim
+
+# Variables globales del proceso ABC-SMC en paralelo
 _worker_X = None
 _worker_m = None
 _worker_nsites = None
@@ -481,7 +504,7 @@ def _evaluar_bloque_candidatos(argumentos):
             invalid="ignore",
             divide="ignore"
         ):
-            Y = simular_precipitacion_abc(
+            Y = simular_precipitacion_v1(
                 theta,
                 _worker_m,
                 _worker_nsites,
@@ -519,6 +542,37 @@ def _evaluar_bloque_candidatos(argumentos):
 
     return errores
 
+def _evaluar_bloque_candidatos(argumentos):
+
+    candidatos, seed_bloque = argumentos
+    rng = np.random.default_rng(seed_bloque)
+
+    # Crear un arreglo para almacenar los errores de cada candidato
+    errores = np.full((len(candidatos), 3), np.inf)
+
+    for i, theta in enumerate(candidatos):
+        # Evitar advertencias durante la generación de simulaciones
+        with np.errstate(over="ignore", invalid="ignore", divide="ignore"):
+            Y = simular_precipitacion_v1(
+                theta,
+                _worker_m,
+                _worker_nsites,
+                _worker_dist_mat,
+                _worker_design_mat,
+                _worker_ngammas,
+                _worker_rho_upper_range,
+                rng=rng
+            )
+
+        # Si por error hay errores invalidos, continuar con el siguiente candidato
+        if not np.isfinite(Y).all():
+            continue
+
+        errores_candidato = mse(_worker_X, Y), mae(_worker_X, Y), error_cuadratico_cuantilico(_worker_X, Y)
+        errores[i] = errores_candidato
+
+    return errores
+
 def _evaluar_candidatos_paralelo(candidatos, n_cores, semilla_epoca, pool):
     n_bloques = min(n_cores, len(candidatos))
     bloques = np.array_split(candidatos, n_bloques)
@@ -536,6 +590,7 @@ def _evaluar_candidatos_paralelo(candidatos, n_cores, semilla_epoca, pool):
     return np.concatenate(resultados, axis=0)
 
 def _calcular_pesos_aceptados(particulas, poblacion, pesos, mu_0, cov_matriz_0, cov_kernel):
+    # Convertir los pesos previos a logaritmos para evitar problemas de subdesbordamiento
     log_pesos_previos = np.log(pesos)
     log_pesos_aceptados = []
 
