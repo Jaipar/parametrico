@@ -4,10 +4,9 @@ os.environ.setdefault("OMP_NUM_THREADS", "1")
 os.environ.setdefault("MKL_NUM_THREADS", "1")
 os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")
 os.environ.setdefault("NUMEXPR_NUM_THREADS", "1")
-
-# Preparar datos para el modelo ABC-SMC 
 import pandas as pd
 from datetime import datetime
+import joblib
 from funciones_final import (
     preparar_datos_region,
     dividir_train_test,
@@ -21,6 +20,7 @@ from funciones_final import (
     proceso_abc_smc
 )
 
+# Preparar datos para el modelo ABC-SMC 
 def flujo_previo_ABC(region, ruta_datos_precipitacion = 'tablas_precipitaciones.parquet', print_comprobacion_dimensiones = True):
     # Cargar datos de precipitaciones CHIRPS
     datos_precipitacion = pd.read_parquet(ruta_datos_precipitacion)
@@ -76,6 +76,8 @@ def flujo_previo_ABC(region, ruta_datos_precipitacion = 'tablas_precipitaciones.
         "nsites_training": nsites_training,
         "dist_mat_training": dist_mat_training,
         "m_training": m_training,
+        "poly": poly,
+        "scaler": scaler
     }
 
 # Número de épocas
@@ -89,7 +91,7 @@ n_min_next = int(n_simul/4)
 # Umbral mínimo de aceptados por epoch para continuar con el algoritmo
 n_min_final = int(n_simul/8)
 
-def main():
+def main(nombre_archivo):
     data = flujo_previo_ABC(region = "Los Santos", print_comprobacion_dimensiones = False)
 
     real = data["Y_train_pivot"].values
@@ -99,15 +101,18 @@ def main():
     design_mat = data["train_design"].to_numpy()
     GLM0 = data["GLM"]
 
+    joblib.dump(data, f"{nombre_archivo}.joblib")
+
     print(str(nsites) + ' locaciones')
     print(str(m) + ' meses en training')
 
     seed = 1000
     print(
-        f"Ejecutar {n_epochs} épocas, usando {n_simul} simulaciones por lote "
-        f"hasta alcanzar {n_min_next} candidatos aceptados por época "
-        f"o un máximo de {n_simul * 10} candidatos, usando {n_cores} núcleos. "
-        f"El algoritmo termina si no se aceptan más de {n_min_final}"
+        f"Semilla {seed}"
+        f"Ejecutando {n_epochs} épocas con {n_cores} núcleos. "
+        f"En cada época genera {n_simul} simulaciones por lote "
+        f"hasta aceptar mínimo {n_min_next} candidatos o sobrepasar las {n_simul * 10} simulaciones por época. "
+        f"El algoritmo termina completamente si no se aceptan más de {n_min_final} candidatos al terminar una época."
     )
 
     filas_totales = proceso_abc_smc(
@@ -130,8 +135,9 @@ if __name__ == "__main__":
     inicio = datetime.now() 
     print("Hora inicial:", inicio)
 
-    filas_totales = main()
-    filas_totales.to_parquet("20260830_santos.parquet")
+    nombre_archivo = "20260830_santos"
+    filas_totales = main(nombre_archivo)
+    filas_totales.to_parquet( f"{nombre_archivo}.parquet")
 
     fin = datetime.now()
     print("Hora final:", fin)

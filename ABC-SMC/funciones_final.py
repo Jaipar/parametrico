@@ -113,48 +113,6 @@ def error_absoluto_cuantilico(X, Y):
     eacp = mae(q_X, q_Y)
     return eacp
 
-
-######## Funciones por borrar
-def preparar_metricas_colas(X, meses, cuantil_umbral=0.90):
-    p_cola = np.linspace(cuantil_umbral, 0.99, 10)
-    cuantiles_cola_mes = np.empty((12, 10), dtype=float)
-    umbrales_ubicaciones_mes = np.empty((12, X.shape[1]), dtype=float)
-
-    for mes in range(1, 12+1):
-        condicion = meses == mes
-        X_mes = X[condicion]
-
-        cuantiles_cola_mes[mes - 1] = np.quantile(X_mes.ravel(),p_cola)
-        umbrales_ubicaciones_mes[mes - 1] = np.quantile(X_mes, cuantil_umbral, axis=0)
-
-    proporciones_exceder_umbral = np.mean(X > umbrales_ubicaciones_mes[meses - 1], axis=1)
-
-    # Revisar
-    return p_cola, cuantiles_cola_mes, umbrales_ubicaciones_mes, proporciones_exceder_umbral
-
-def error_cola_mensual(Y, meses, p_cola, cuantiles_cola_mes):
-    errores_mensuales = np.empty(12, dtype=float)
-
-    for mes in range(1, 12+1):
-        Y_mes = Y[meses == mes].ravel()
-        Y_cuantiles_mes = np.quantile(Y_mes, p_cola)
-        errores_mensuales[mes - 1] = mse(cuantiles_cola_mes[mes - 1], Y_cuantiles_mes)
-
-    return np.mean(errores_mensuales)
-
-def error_exceder_umbral(Y, meses, umbrales_ubicaciones_mes, proporciones_exceder_umbral):
-    Y_proporciones_exceder_umbral = np.mean(Y > umbrales_ubicaciones_mes[meses - 1], axis=1)
-    errores_mensuales = np.empty(12, dtype=float)
-
-    for mes in range(1, 12+1):
-        condicion = meses == mes
-        X_mes = np.sort(proporciones_exceder_umbral[condicion])
-        Y_mes = np.sort(Y_proporciones_exceder_umbral[condicion])
-        errores_mensuales[mes - 1] = mse(X_mes, Y_mes)
-
-    return np.mean(errores_mensuales)
-######### Fin funciones por borrar
-
 # Preparar datos para una región específica, incluyendo precipitación mensual y covariables espaciales
 def preparar_datos_region(datos, region):
     # Filtrar por región
@@ -250,7 +208,7 @@ def preprocesamiento_escalar_datos(train):
 columnas_polinomicas = ['lat', 'lon']
 columnas_no_polinomicas = ['elevation', 'sin_1', 'cos_1', 'sin_2', 'cos_2', 'ENSO', 'month']
 # Columnas seleccionadas para la matriz de diseño
-columnas_matriz_diseno = ['lat', 'lon', 'month']
+columnas_matriz_diseno = ['lat', 'lon', 'sin_1', 'cos_1', 'sin_2', 'cos_2']
 
 # Construir matriz de diseño
 def procesamiento_matriz_diseno(datos, poly, scaler):
@@ -386,6 +344,12 @@ def construir_parametros_previa_glm(GLM0, n_extra=3, c=10):
 
     return mu_0, cov_matriz_0
 
+# Construir parámetros de la distribución previa asumiendo previa no informátiva
+def construir_parametros_previa_identidad(nparametros, c=1):
+    mu_0 = np.zeros(nparametros)
+    cov_matriz_0 = np.eye(nparametros) * (c**2)
+    return mu_0, cov_matriz_0
+
 # Transformar valores del vector theta en las escalas requeridas para la generación aleatoria (v1)
 def transformar_theta_v1(theta, ngammas, rho_upper_range):
     X1_param_max_range = 3
@@ -461,30 +425,25 @@ def _inicializar_worker(X, m, nsites, dist_mat, design_mat, ngammas, rho_upper_r
     _worker_rho_upper_range = rho_upper_range
 
 def _evaluar_bloque_candidatos(argumentos):
-
     candidatos, seed_bloque = argumentos
     rng = np.random.default_rng(seed_bloque)
 
     # Crear un arreglo para almacenar los errores de cada candidato
-    errores = np.full((len(candidatos), 3), np.inf)
+    errores = np.full(len(candidatos), np.inf)
 
     for i, theta in enumerate(candidatos):
         # Evitar advertencias durante la generación de simulaciones
         with np.errstate(over="ignore", invalid="ignore", divide="ignore"):
             Y = simular_precipitacion_v1(
-                theta,
-                _worker_m,
-                _worker_nsites,
-                _worker_dist_mat,
-                _worker_design_mat,
-                _worker_ngammas,
-                _worker_rho_upper_range,
+                theta, _worker_m, _worker_nsites, 
+                _worker_dist_mat, _worker_design_mat, 
+                _worker_ngammas, _worker_rho_upper_range,
                 rng=rng
             )
-        # Si por error hay errores invalidos, continuar con el siguiente candidato
+        # Si se generan valores invalidos, continuar con el siguiente candidato
         if not np.isfinite(Y).all():
             continue
-        errores[i] = mse(_worker_X, Y), mae(_worker_X, Y), error_cuadratico_cuantilico(_worker_X, Y)
+        errores[i] = mse(_worker_X, Y)
 
     return errores
 
@@ -521,16 +480,16 @@ def proceso_abc_smc(
     n_min_final,
     seed
 ):
-    print(f"Seed {seed}")
-
     # Máximo número de candidatos permitidos por epoch
     n_max_candidatos = n_simul * 10
 
     # Argumentos para distribución previa
     rho_upper_range = 5 * np.max(dist_mat)
-    mu_0, cov_matriz_0 = construir_parametros_previa_glm(GLM0)
     ngammas = len(GLM0.params.values)
-    nparametros = len(mu_0)
+    nextra = 3
+    # nextra = 2
+    nparametros = ngammas + nextra
+    mu_0, cov_matriz_0 = construir_parametros_previa_identidad(nparametros)
 
     # Secuencia de semillas
     secuencia_semillas = np.random.SeedSequence(seed)
@@ -564,7 +523,7 @@ def proceso_abc_smc(
             cov_kernel = calcular_cov_kernel(poblacion, pesos, nparametros, epoc)
 
             candidatos_bloques = []
-            errores_bloques = []
+            # errores_bloques = []
             distancias_bloques = []
             total_candidatos = 0
             total_aceptados = 0
@@ -573,18 +532,20 @@ def proceso_abc_smc(
                 candidatos = generar_candidatos(n_simul, poblacion, cov_kernel, pesos, nparametros, epoc, rng)
 
                 # Calcular matriz de errores (MSE, MAE, ECCP) para cada candidato
-                errores_candidatos = _evaluar_candidatos_paralelo(candidatos, n_cores, semillas_epocas[epoc], pool)
+                # errores_candidatos = _evaluar_candidatos_paralelo(candidatos, n_cores, semillas_epocas[epoc], pool)
+                distancias_candidatos = _evaluar_candidatos_paralelo(candidatos, n_cores, semillas_epocas[epoc], pool)
 
                 # Calcular errores ponderados (solo si aplica) para cada candidato
                 # Columna 0: MSE, Columna 1: MAE, Columna 2: ECCP
-                distancias_candidatos = errores_candidatos[:,2]
+                # distancias_candidatos = errores_candidatos
 
                 # Condiciones para aceptar candidatos
-                condiciones_finitas = np.all(np.isfinite(errores_candidatos), axis=1)
+                # condiciones_finitas = np.all(np.isfinite(errores_candidatos), axis=1)
+                condiciones_finitas = np.isfinite(distancias_candidatos)
                 mascara_aceptacion = condiciones_finitas & (distancias_candidatos <= epsilon_epoch)
                 # Actualizar vectores con particulas, errores, distancias
                 candidatos_bloques.append(candidatos[mascara_aceptacion])
-                errores_bloques.append(errores_candidatos[mascara_aceptacion])
+                # errores_bloques.append(errores_candidatos[mascara_aceptacion])
                 distancias_bloques.append(distancias_candidatos[mascara_aceptacion])
 
                 # Actualizar contadores
@@ -599,13 +560,13 @@ def proceso_abc_smc(
             print(
                 f"Epoca {epoc}: "
                 f"candidatos={total_candidatos}, "
+                f"ESS={ess:.2f}, "
                 f"aceptados={total_aceptados}, "
-                f"epsilon_epoch={epsilon_epoch:.2f}, "
-                f"ESS={ess:.2f}"
+                f"epsilon_t={epsilon_epoch:.2f}"
             )
 
             candidatos_aceptados = np.concatenate(candidatos_bloques, axis=0)
-            errores_aceptados = np.concatenate(errores_bloques)
+            # errores_aceptados = np.concatenate(errores_bloques)
             distancias_aceptadas = np.concatenate(distancias_bloques)
             pesos_aceptados = calcular_pesos_aceptados(candidatos_aceptados, poblacion, pesos, mu_0, cov_matriz_0, cov_kernel)
 
@@ -626,8 +587,9 @@ def proceso_abc_smc(
     filas = []
     nombres_gamma = GLM0.params.index
 
-    for theta, errores, distancia, peso in zip(poblacion, errores_aceptados, distancias_aceptadas, pesos):
+    for theta, distancia, peso in zip(poblacion, distancias_aceptadas, pesos):
         gamma_params, delta, beta3, rho = transformar_theta_v1(theta, ngammas, rho_upper_range)
+        # gamma_params, beta3, rho = transformar_theta_v2(theta, ngammas, rho_upper_range)
 
         fila = {
             f"gamma_{nombre}": valor
@@ -637,10 +599,7 @@ def proceso_abc_smc(
             "delta": delta,
             "beta3": beta3,
             "rho": rho,
-            "error_mse": errores[0],
-            "error_mae": errores[1],
-            "error_eccp": errores[2],
-            "error": distancia,
+            "distancia": distancia,
             "peso": peso,
         })
     
