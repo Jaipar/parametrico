@@ -317,7 +317,7 @@ def GLM_predicciones_residuos_test(test, poly, scaler, model_GLM):
 
     Y_plus = test['chirps'] + 1
     Y_plus_pred = model_GLM.predict(X_design).values
-    Y_resid = model_GLM.resid_response
+    Y_resid = Y_plus - Y_plus_pred
     Y_ratio = Y_plus/Y_plus_pred
 
     result_df = pd.DataFrame({
