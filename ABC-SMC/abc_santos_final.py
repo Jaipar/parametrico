@@ -81,6 +81,8 @@ def flujo_previo_ABC(region, ruta_datos_precipitacion = 'tablas_precipitaciones.
         "scaler": scaler
     }
 
+# Archivo para guardar (sin extensiones)
+nombre_archivo = "20260830_santos"
 # Número de épocas
 n_epochs = 20
 # Número de núcleos
@@ -92,7 +94,13 @@ n_min_next = int(n_simul/4)
 # Umbral mínimo de aceptados por epoch para continuar con el algoritmo
 n_min_final = int(n_simul/8)
 
-def main(nombre_archivo):
+## Condiguración para el generador aleatorio
+X1_ley = "lognormal",
+X1_es_comun_ubic = True,
+f_error = mse,
+prior_mu_cov = "GLM"
+
+def main():
     data = flujo_previo_ABC(region = "Los Santos", print_comprobacion_dimensiones = False)
 
     real = data["Y_train_pivot"].values
@@ -129,10 +137,10 @@ def main(nombre_archivo):
         n_min_next,
         n_min_final,
         seed,
-        X1_ley = "lognormal",
-        X1_es_comun_ubic = True,
-        f_error = mse,
-        prior_mu_cov = "GLM"
+        X1_ley,
+        X1_es_comun_ubic,
+        f_error,
+        prior_mu_cov
     )
     return filas_totales
 
@@ -140,8 +148,7 @@ if __name__ == "__main__":
     inicio = datetime.now() 
     print("Hora inicial:", inicio)
 
-    nombre_archivo = "20260830_santos"
-    filas_totales = main(nombre_archivo)
+    filas_totales = main()
     filas_totales.to_parquet( f"{nombre_archivo}.parquet")
 
     fin = datetime.now()
