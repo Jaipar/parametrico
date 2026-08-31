@@ -17,7 +17,8 @@ from funciones_final import (
     GLM_predicciones_residuos_test,
     comprobar_dimensiones_ubic,
     procesamiento_matriz_diseno,
-    proceso_abc_smc
+    proceso_abc_smc,
+    mse
 )
 
 # Preparar datos para el modelo ABC-SMC 
@@ -127,7 +128,11 @@ def main(nombre_archivo):
         n_simul,
         n_min_next,
         n_min_final,
-        seed
+        seed,
+        X1_ley = "lognormal",
+        X1_es_comun_ubic = True,
+        f_error = mse,
+        prior_mu_cov = "GLM"
     )
     return filas_totales
 
