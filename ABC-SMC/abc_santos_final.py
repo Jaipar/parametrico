@@ -80,12 +80,14 @@ def flujo_previo_ABC(region, ruta_datos_precipitacion = 'tablas_precipitaciones.
 
 # Número de épocas
 n_epochs = 20
-# Número de simulaciones por época
-n_simul = 6000
 # Número de núcleos
 n_cores = 6
-# Número mínimo de partículas aceptadas por época
-n_min_aceptados = int(n_simul/2)
+# Número de simulaciones por época
+n_simul = n_cores * 1600
+# Número mínimo requerido de aceptados para para avanzar al siguiente epoch
+n_min_next = int(n_simul/4)
+# Umbral mínimo de aceptados por epoch para continuar con el algoritmo
+n_min_final = int(n_simul/8)
 
 def main():
     data = flujo_previo_ABC(region = "Los Santos", print_comprobacion_dimensiones = False)
@@ -102,9 +104,10 @@ def main():
 
     seed = 1000
     print(
-        f"Ejecutar {n_epochs} épocas, usando {n_simul} simulaciones por iteración "
-        f"hasta alcanzar {n_min_aceptados} candidatos aceptados por época, "
-        f"usando {n_cores} núcleos."
+        f"Ejecutar {n_epochs} épocas, usando {n_simul} simulaciones por lote "
+        f"hasta alcanzar {n_min_next} candidatos aceptados por época "
+        f"o un máximo de {n_simul * 10} candidatos, usando {n_cores} núcleos. "
+        f"El algoritmo termina si no se aceptan más de {n_min_final}"
     )
 
     filas_totales = proceso_abc_smc(
@@ -117,7 +120,8 @@ def main():
         n_cores,
         n_epochs,
         n_simul,
-        n_min_aceptados,
+        n_min_next,
+        n_min_final,
         seed
     )
     return filas_totales

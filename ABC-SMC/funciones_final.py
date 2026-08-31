@@ -1,16 +1,14 @@
-# Funciones para el modelo Approximate Bayesian Computation (ABC)
+# Funciones para el modelo Approximate Bayesian Computation (ABC-SMC)
+import os
 import numpy as np
 import pandas as pd
 import statsmodels.api as sm
 from multiprocessing import get_context
-from scipy.linalg import cholesky, solve_triangular
-from scipy.special import gammaincinv, logsumexp, ndtr
+from scipy.special import logsumexp
 from scipy.special import gamma as gamma_function
-from scipy.spatial.distance import cdist, pdist, squareform
-from scipy.stats import gamma, norm, multivariate_normal, wasserstein_distance
+from scipy.spatial.distance import pdist, squareform
+from scipy.stats import gamma, norm, multivariate_normal
 from sklearn.preprocessing import PolynomialFeatures, StandardScaler, MinMaxScaler
-from datetime import datetime
-import os
 
 # Incluir columnas de fenómeno ENSO (El Niño, La Niña, Neutral)
 def importar_ENSO():
@@ -519,10 +517,14 @@ def proceso_abc_smc(
     n_cores,
     n_epochs,
     n_simul,
-    n_min_aceptados,
+    n_min_next,
+    n_min_final,
     seed
 ):
-    print(f"PID {os.getpid()} seed {seed}")
+    print(f"Seed {seed}")
+
+    # Máximo número de candidatos permitidos por epoch
+    n_max_candidatos = n_simul * 10
 
     # Argumentos para distribución previa
     rho_upper_range = 5 * np.max(dist_mat)
@@ -550,9 +552,6 @@ def proceso_abc_smc(
             initargs=argumentos_worker,
         )
 
-    # Máximo número de candidatos permitidos para alcanzar el mínimo de aceptados
-    n_max_candidatos = n_simul * 10
-
     # Primera poblacion de previas
     poblacion = model_prior_mvnormal(n_simul, mu_0, cov_matriz_0, rng=rng)
     pesos = np.ones(n_simul) / n_simul
@@ -570,7 +569,7 @@ def proceso_abc_smc(
             total_candidatos = 0
             total_aceptados = 0
 
-            while total_aceptados < n_min_aceptados:
+            while total_aceptados < n_min_next:
                 candidatos = generar_candidatos(n_simul, poblacion, cov_kernel, pesos, nparametros, epoc, rng)
 
                 # Calcular matriz de errores (MSE, MAE, ECCP) para cada candidato
@@ -578,7 +577,7 @@ def proceso_abc_smc(
 
                 # Calcular errores ponderados (solo si aplica) para cada candidato
                 # Columna 0: MSE, Columna 1: MAE, Columna 2: ECCP
-                distancias_candidatos = errores_candidatos[:,0]
+                distancias_candidatos = errores_candidatos[:,2]
 
                 # Condiciones para aceptar candidatos
                 condiciones_finitas = np.all(np.isfinite(errores_candidatos), axis=1)
@@ -590,29 +589,33 @@ def proceso_abc_smc(
 
                 # Actualizar contadores
                 total_aceptados += np.sum(mascara_aceptacion)
-                total_iteraciones += n_simul
+                total_candidatos += n_simul
 
                 if total_candidatos >= n_max_candidatos:
                     break
+
+            # Estadísticas
+            ess = 1 / np.sum(pesos ** 2)
+            print(
+                f"Epoca {epoc}: "
+                f"candidatos={total_candidatos}, "
+                f"aceptados={total_aceptados}, "
+                f"epsilon_epoch={epsilon_epoch:.2f}, "
+                f"ESS={ess:.2f}"
+            )
 
             candidatos_aceptados = np.concatenate(candidatos_bloques, axis=0)
             errores_aceptados = np.concatenate(errores_bloques)
             distancias_aceptadas = np.concatenate(distancias_bloques)
             pesos_aceptados = calcular_pesos_aceptados(candidatos_aceptados, poblacion, pesos, mu_0, cov_matriz_0, cov_kernel)
 
-            # Estadísticas
-            ess = 1 / np.sum(pesos_aceptados ** 2)
-
-            print(
-                f"Epoca {epoc}: iteraciones={total_iteraciones}, aceptados={total_aceptados}"
-                f"epsilon_epoch={epsilon_epoch:.4f}"
-                f"ESS={ess:.1f}"
-            )
-
             # Actualizar elementos para siguiente epoch
             epsilon_epoch = np.quantile(distancias_aceptadas, 0.50)
             poblacion = candidatos_aceptados
             pesos = pesos_aceptados
+
+            if total_aceptados < n_min_final:
+                break
 
     finally:
         if pool is not None:
