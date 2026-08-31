@@ -273,10 +273,8 @@ def procesamiento_matriz_diseno(datos, poly, scaler):
     X_design = X_full[columnas_matriz_diseno]
 
     # Tratamiento de variables categóricas
-    columnas_categoricas = ["ENSO", "month"]
-
-    for col in columnas_categoricas:
-        if col in X_full.columns:
+    for col in ["ENSO", "month"]:
+        if col in columnas_matriz_diseno:
             dummies = pd.get_dummies(X_design[col], prefix=col, drop_first=True)
             X_design = pd.concat([X_design.drop(columns=[col]), dummies], axis=1)
 
@@ -552,6 +550,7 @@ def proceso_abc_smc(
             initargs=argumentos_worker,
         )
 
+    # Máximo número de candidatos permitidos para alcanzar el mínimo de aceptados
     n_max_candidatos = n_simul * 10
 
     # Primera poblacion de previas
