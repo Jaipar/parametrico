@@ -85,7 +85,7 @@ n_simul = 6000
 # Número de núcleos
 n_cores = 6
 # Número mínimo de partículas aceptadas por época
-n_min_aceptados = n_simul/2
+n_min_aceptados = int(n_simul/2)
 
 def main():
     data = flujo_previo_ABC(region = "Los Santos", print_comprobacion_dimensiones = False)

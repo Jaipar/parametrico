@@ -351,7 +351,7 @@ def simular_X3(n, rho, beta3, nsites, dist_mat, rng=None):
         rng = np.random.default_rng()
 
     Sigma = np.exp(-dist_mat / rho)
-    Gauss = rng.multivariate_normal.rvs(mean=np.zeros(nsites), cov=Sigma, size=n)
+    Gauss = rng.multivariate_normal(mean=np.zeros(nsites), cov=Sigma, size=n)
     Gamma = gamma.ppf(norm.cdf(Gauss), a=beta3, scale=1)
     return (beta3 - 1) / Gamma
 
