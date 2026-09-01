@@ -384,8 +384,10 @@ def transformar_theta(theta, ngammas, rho_upper_range, X1_ley):
         return gamma_params, beta3, rho
 
 def simular_precipitacion(
-        gamma_params, delta, beta3, rho, m, nsites, dist_mat, design_mat,
-        X1_ley="lognormal", X1_es_comun_ubic=True, rng=None
+        gamma_params, delta, beta3, rho, 
+        m, nsites, dist_mat, design_mat,
+        X1_ley="lognormal", X1_es_comun_ubic=True,
+        rng=None
     ):
 
     alpha_long = np.exp(design_mat @ gamma_params)
@@ -397,24 +399,6 @@ def simular_precipitacion(
         Y_sim = alpha * X1 * X3 - 1 # m x nsites
     else:
         Y_sim = alpha * X3 - 1 # m x nsites
-
-    return Y_sim
-
-def simular_precipitacion_theta(
-        theta, m, nsites, dist_mat, design_mat, ngammas, rho_upper_range,
-        X1_ley="lognormal", X1_es_comun_ubic=True, rng=None
-    ):
-
-    if X1_ley is not None:
-        gamma_params, delta, beta3, rho = transformar_theta(theta, ngammas, rho_upper_range, X1_ley)
-    else:
-        gamma_params, beta3, rho = transformar_theta(theta, ngammas, rho_upper_range, X1_ley)
-        delta = None
-
-    Y_sim = simular_precipitacion(
-        gamma_params, delta, beta3, rho, m, nsites, dist_mat, design_mat,
-        X1_ley, X1_es_comun_ubic, rng
-    )
 
     return Y_sim
 
@@ -456,6 +440,22 @@ def _inicializar_worker(
     _worker_X1_es_comun_ubic = X1_es_comun_ubic
     _worker_f_error = f_error
 
+def _simular_precipitacion_theta(theta, rng=None):
+    if _worker_X1_ley is not None:
+        gamma_params, delta, beta3, rho = transformar_theta(theta, _worker_ngammas, _worker_rho_upper_range, _worker_X1_ley)
+    else:
+        gamma_params, beta3, rho = transformar_theta(theta, _worker_ngammas, _worker_rho_upper_range, _worker_X1_ley)
+        delta = None
+
+    Y_sim = simular_precipitacion(
+        gamma_params, delta, beta3, rho,
+        _worker_m, _worker_nsites, _worker_dist_mat, _worker_design_mat,
+        _worker_X1_ley, _worker_X1_es_comun_ubic,
+        rng
+    )
+
+    return Y_sim
+
 def _evaluar_bloque_candidatos(argumentos):
     candidatos, seed_bloque = argumentos
     rng = np.random.default_rng(seed_bloque)
@@ -466,13 +466,7 @@ def _evaluar_bloque_candidatos(argumentos):
     for i, theta in enumerate(candidatos):
         # Evitar advertencias durante la generación de simulaciones
         with np.errstate(over="ignore", invalid="ignore", divide="ignore"):
-            Y = simular_precipitacion_theta(
-                theta, _worker_m, _worker_nsites, 
-                _worker_dist_mat, _worker_design_mat, 
-                _worker_ngammas, _worker_rho_upper_range,
-                _worker_X1_ley, _worker_X1_es_comun_ubic,
-                rng=rng
-            )
+            Y = _simular_precipitacion_theta(theta, rng=rng)
         # Si se generan valores invalidos, continuar con el siguiente candidato
         if not np.isfinite(Y).all():
             continue
@@ -509,8 +503,8 @@ def proceso_abc_smc(
     n_cores,
     n_epochs,
     n_simul,
-    n_min_next,
-    n_min_final,
+    n_min_next, # Si n_min_next = 1, se ejecuta la versión rápida
+    n_min_final, # Si n_min_final = np.inf,e l algoritmo no termina anticipadamente
     seed,
     # Variantes de modelos aleatorios
     X1_ley = "lognormal",
@@ -518,6 +512,9 @@ def proceso_abc_smc(
     f_error = mse,
     prior_mu_cov = "GLM"
 ):
+    # Rango máximo rho
+    rho_upper_range = 5 * np.max(dist_mat)
+    
     # Máximo número de candidatos permitidos por epoch
     n_max_candidatos = n_simul * 10
 
@@ -538,8 +535,6 @@ def proceso_abc_smc(
         mu_0, cov_matriz_0 = construir_media_cov_previa_identidad(nparametros)
     else:
         raise ValueError(f"prior_mu_cov debe ser 'GLM' o 'identidad', no '{prior_mu_cov}'")
-    # Rango máximo rho
-    rho_upper_range = 5 * np.max(dist_mat)
 
     # Secuencia de semillas
     secuencia_semillas = np.random.SeedSequence(seed)
@@ -609,6 +604,9 @@ def proceso_abc_smc(
                 f"epsilon_t={epsilon_epoch:.2f}"
             )
 
+            if total_aceptados < n_min_final:
+                break
+
             candidatos_aceptados = np.concatenate(aceptados_bloques)
             distancias_aceptadas = np.concatenate(distancias_bloques)
 
@@ -617,15 +615,13 @@ def proceso_abc_smc(
             epsilon_epoch = np.quantile(distancias_aceptadas, 0.50)
             poblacion = candidatos_aceptados
 
-            if total_aceptados < n_min_final:
-                break
-
     finally:
         if pool is not None:
             pool.close()
             pool.join()
 
-    filas = guardar_poblacion(X1_ley, GLM0.params.index, rho_upper_range, poblacion, distancias_aceptadas, pesos)
+    nombres_gamma = GLM0.params.index
+    filas = _guardar_poblacion(X1_ley, nombres_gamma, poblacion, distancias_aceptadas, pesos)
     return filas
 
 def calcular_cov_kernel(poblacion, pesos, nparametros, epoc):
@@ -672,14 +668,14 @@ def calcular_pesos_aceptados(particulas, poblacion, pesos, mu_0, cov_matriz_0, c
         pesos_aceptados = np.exp(log_pesos_aceptados - logsumexp(log_pesos_aceptados))
     return pesos_aceptados
 
-def guardar_poblacion(X1_ley, nombres_gamma, rho_upper_range, poblacion, errores, pesos):
+def _guardar_poblacion(X1_ley, nombres_gamma, poblacion, errores, pesos):
     filas = []
     ngammas = len(nombres_gamma)
     for theta, error, peso in zip(poblacion, errores, pesos):
         if X1_ley is not None:
-            gamma_params, delta, beta3, rho = transformar_theta(theta, ngammas, rho_upper_range, X1_ley)
+            gamma_params, delta, beta3, rho = transformar_theta(theta, ngammas, _worker_rho_upper_range, X1_ley)
         else:
-            gamma_params, beta3, rho = transformar_theta(theta, ngammas, rho_upper_range, X1_ley)
+            gamma_params, beta3, rho = transformar_theta(theta, ngammas, _worker_rho_upper_range, X1_ley)
 
         fila = {
             f"gamma_{nombre}": valor
