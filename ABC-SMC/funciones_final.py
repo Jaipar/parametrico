@@ -621,7 +621,7 @@ def proceso_abc_smc(
             pool.join()
 
     nombres_gamma = GLM0.params.index
-    filas = _guardar_poblacion(X1_ley, nombres_gamma, poblacion, distancias_aceptadas, pesos)
+    filas = guardar_poblacion(X1_ley, nombres_gamma, rho_upper_range, poblacion, distancias_aceptadas, pesos)
     return filas
 
 def calcular_cov_kernel(poblacion, pesos, nparametros, epoc):
@@ -668,14 +668,14 @@ def calcular_pesos_aceptados(particulas, poblacion, pesos, mu_0, cov_matriz_0, c
         pesos_aceptados = np.exp(log_pesos_aceptados - logsumexp(log_pesos_aceptados))
     return pesos_aceptados
 
-def _guardar_poblacion(X1_ley, nombres_gamma, poblacion, errores, pesos):
+def guardar_poblacion(X1_ley, nombres_gamma, rho_upper_range, poblacion, errores, pesos):
     filas = []
     ngammas = len(nombres_gamma)
     for theta, error, peso in zip(poblacion, errores, pesos):
         if X1_ley is not None:
-            gamma_params, delta, beta3, rho = transformar_theta(theta, ngammas, _worker_rho_upper_range, X1_ley)
+            gamma_params, delta, beta3, rho = transformar_theta(theta, ngammas, rho_upper_range, X1_ley)
         else:
-            gamma_params, beta3, rho = transformar_theta(theta, ngammas, _worker_rho_upper_range, X1_ley)
+            gamma_params, beta3, rho = transformar_theta(theta, ngammas, rho_upper_range, X1_ley)
 
         fila = {
             f"gamma_{nombre}": valor

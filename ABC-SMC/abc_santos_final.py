@@ -82,7 +82,7 @@ def flujo_previo_ABC(region, ruta_datos_precipitacion = 'tablas_precipitaciones.
     }
 
 # Archivo para guardar (sin extensiones)
-nombre_archivo = "20260830_santos"
+nombre_archivo = "20260830_santos_LN_C_MSE_GLM"
 # Número de épocas
 n_epochs = 20
 # Número de núcleos
@@ -95,9 +95,9 @@ n_min_next = int(n_simul/4)
 n_min_final = int(n_simul/8)
 
 ## Condiguración para el generador aleatorio
-X1_ley = "lognormal",
-X1_es_comun_ubic = True,
-f_error = mse,
+X1_ley = "lognormal"
+X1_es_comun_ubic = True
+f_error = mse
 prior_mu_cov = "GLM"
 
 def main():
@@ -117,7 +117,7 @@ def main():
 
     seed = 1000
     print(
-        f"Semilla {seed}"
+        f"Semilla {seed}. "
         f"Ejecutando {n_epochs} épocas con {n_cores} núcleos. "
         f"En cada época genera {n_simul} simulaciones por lote "
         f"hasta aceptar mínimo {n_min_next} candidatos o sobrepasar las {n_simul * 10} simulaciones por época. "
