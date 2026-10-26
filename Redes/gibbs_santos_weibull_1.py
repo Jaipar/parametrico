@@ -1,0 +1,420 @@
+from functools import partial
+from datetime import datetime
+
+import numpy as np
+import pandas as pd
+import tensorflow as tf
+import copy
+
+import bayesflow.diagnostics as diag
+from bayesflow.amortizers import AmortizedPosterior
+from bayesflow.networks import InvertibleNetwork
+from bayesflow.simulation import GenerativeModel, Prior, Simulator
+from bayesflow.trainers import Trainer
+
+# ============================================================
+# 0. FUNCIONES AUXILIARES
+# ============================================================
+
+from funciones import (
+    preparar_datos_region,
+    dividir_train_test,
+    calcular_matriz_distancias,
+    preprocesamiento_escalar_datos,
+    procesamiento_matriz_diseno,
+    simular_X1_lognormal,
+    simular_X1_weibull, 
+    simular_X3
+    )
+
+# ============================================================
+# 1. CONFIGURACION
+# ============================================================
+
+# Variante:
+#     Y = X1(s,t) * X3(s,t)
+#     X1(s,t) ~ Weibull
+#     X3(s,t) = Inversa-Gamma con copula Gaussiana
+
+# Versión paramétros KAPPA, BETAX, RHO en distribución 
+region = "Los Santos"
+ruta_datos = "tablas_precipitaciones.parquet"
+fecha_corte = pd.Timestamp("2018-12-31")
+
+# Configuración épocas, entrenamiento, bloques
+n_epochs = 25
+n_iterations_per_epoch = 1000
+n_batch_size = 128
+block_size = 12800
+total_sims = n_batch_size*n_iterations_per_epoch
+
+# ----- Matriz de diseño -------------------------------------
+
+# columnas_matriz_diseno_n = ['lat', 'lon', 'lat^2', 'lon^2', 'sin_1', 'cos_1', 'sin_2', 'cos_2']
+# columnas_matriz_diseno_3 = ['lat', 'lon',          'lon^2', 'sin_1', 'cos_1', 'sin_2', 'cos_2']
+# columnas_matriz_diseno_2 = ['lat', 'lon', 'lat^2',          'sin_1', 'cos_1', 'sin_2', 'cos_2']
+columnas_matriz_diseno_1 = ['lat', 'lon',                   'sin_1', 'cos_1', 'sin_2', 'cos_2']
+
+# ----- Preparación de datos ---------------------------------
+
+datos_precipitacion = pd.read_parquet(ruta_datos)
+datos_region = preparar_datos_region(datos_precipitacion, region)
+train, test, nsites_train, nsites_test, nsites_total, ubic_train, ubic_test, ubic, m_train, m_test = dividir_train_test(datos_region, fecha_corte, frac=0.80, seed=1234)
+dist_mat = calcular_matriz_distancias(ubic_train)
+
+# Ordenar para alpha_long.reshape(nsites, m).T
+train = (
+    train
+    .sort_values(
+        ["lat", "lon", "date"],
+        ascending=[False, True, True],
+    )
+    .reset_index(drop=True)
+    .copy()
+)
+
+test = (
+    test
+    .sort_values(
+        ["lat", "lon", "date"],
+        ascending=[False, True, True],
+    )
+    .reset_index(drop=True)
+    .copy()
+)
+
+poly, scaler = preprocesamiento_escalar_datos(train)
+train_design = procesamiento_matriz_diseno(train, columnas_matriz_diseno_1, poly, scaler)
+test_design = procesamiento_matriz_diseno(test, columnas_matriz_diseno_1, poly, scaler)
+
+# Grilla rectangular
+ubic_rectangular = (
+    pd.MultiIndex.from_product(
+        [ubic_train["lat"].unique(), ubic_train["lon"].unique()],
+        names=["lat", "lon"]
+    )
+    .to_frame(index=False)
+)
+
+ubic_aux = ubic_train
+ubic_aux['aux'] = 1
+ubic_rectangular = ubic_rectangular.merge(ubic_aux, on = ['lon','lat'], how = 'left').sort_values(['lat','lon'], ascending=[False,True])
+
+nsites_rectangular = len(ubic_rectangular)
+n_lon = ubic_rectangular['lon'].nunique()
+n_lat = ubic_rectangular['lat'].nunique()
+
+# ============================================================
+# 2. VARIABLES GLOBALES DEL SIMULADOR BAYESFLOW
+# ============================================================
+
+GAMMA_SD = 3.5
+
+DELTA_MIN = 0.05
+DELTA_MAX = 5.00
+
+BETA3_MIN = 2.05
+BETA3_MAX = 150.00
+
+RHO_BUTTOM = 0.05
+RHO_UPPPER = 2 * np.max(dist_mat)
+
+def previa_covariables(ncov):
+    simul_gamma = np.random.normal(0, GAMMA_SD, ncov)
+    return simul_gamma
+
+def calcular_alpha(design_mat, gamma_params):
+    alpha_long = np.exp(design_mat.to_numpy() @ gamma_params)
+    alpha = alpha_long.reshape(nsites_train, m).T
+    return alpha
+
+def model_prior_covariables():
+    ncov = train_design.shape[1]
+    gammas = previa_covariables(ncov)
+    previas = gammas
+    return(previas)
+
+nombre_parametros_covariables = train_design.columns
+prior_covariables = Prior(prior_fun=model_prior_covariables, param_names=nombre_parametros_covariables)
+
+def proceso_covariables(gamma_params, m):
+    delta_auxiliar = np.random.uniform(DELTA_MIN, DELTA_MAX)
+    betax_auxiliar = np.random.uniform(BETA3_MIN, BETA3_MAX)
+    rho_auxiliar = np.random.uniform(RHO_BUTTOM, RHO_UPPPER)
+
+    alpha_full = calcular_alpha(train_design, gamma_params)
+    X1_auxiliar = simular_X1_weibull(m, delta_auxiliar, nsites = 1)
+    X3_auxiliar_completo = simular_X3(m, betax_auxiliar, rho_auxiliar, nsites_train, dist_mat)
+
+    X_train_auxiliar = alpha_full * X1_auxiliar * X3_auxiliar_completo
+
+    # Agregar parámetros auxiliares
+    X_train_auxiliar = np.column_stack([
+        X_train_auxiliar,
+        np.repeat(delta_auxiliar, m),
+        np.repeat(betax_auxiliar, m),
+        np.repeat(rho_auxiliar, m)
+    ])
+
+    X_train_auxiliar = X_train_auxiliar.reshape(1, m, nsites_train+3)
+    return np.array([X_train_auxiliar])
+
+def revisar_GPU():
+    # Configuración para permitir el uso de toda la GPU disponible
+    physical_devices = tf.config.list_physical_devices('GPU')
+    if len(physical_devices) > 0:
+        # Hacer visibles todas las GPUs disponibles
+        tf.config.set_visible_devices(physical_devices, 'GPU')
+
+        # Configurar para permitir el crecimiento dinámico de la memoria de cada GPU
+        for device in physical_devices:
+            tf.config.experimental.set_memory_growth(device, True)
+        print('Gpus detectados!')
+    else:
+        print("No se detectaron GPUs.")
+
+
+# ----- Gibbs -------------------------------------------------
+
+def datos_para_red1(parametros,nsites,m,simulacion):
+    delta_auxiliar,betax_auxiliar,rho_auxiliar = parametros
+    X_train_auxiliar = np.zeros((nsites, m))
+
+    for sitio in range(nsites):
+        X_train_auxiliar[sitio] = simulacion[0][0][:,sitio]
+
+    # Agregar parámetros auxiliares
+    X_train_auxiliar = np.vstack([
+        X_train_auxiliar,
+        np.repeat(delta_auxiliar, m),
+        np.repeat(betax_auxiliar, m),
+        np.repeat(rho_auxiliar, m),
+    ])
+
+    X_train_auxiliar = X_train_auxiliar.reshape(1, nsites+3, m).transpose(0,2,1)
+    return np.array([X_train_auxiliar])
+
+def datos_para_red2(gamma_params,nsite_completados,m,simulacion,design_mat):
+    X_train_auxiliar = np.zeros((nsites_rectangular, m))
+
+    sitio_ind = 0
+    for sitio in range(nsites_rectangular):
+        if np.isnan(ubic_rectangular.aux.values[sitio]):
+            X_train_auxiliar[sitio] = np.repeat(0,m)
+
+        else:
+            # REVISAR CON CARLOS DIMENSIONES DE MATRIZ DISEÑO Y AUXILIAR
+            alpha_auxiliar = calcular_alpha(design_mat[:, sitio_ind], gamma_params)
+            auxi = simulacion[0][0][:,sitio_ind]
+            sitio_ind +=1
+            # REVISAR CON CARLOS LOG
+            auxi = np.log(auxi/alpha_auxiliar)
+            X_train_auxiliar[sitio] = auxi
+
+    X_train_auxiliar = X_train_auxiliar.reshape(1, nsites_rectangular, m).transpose(0, 2, 1)
+    X_train_auxiliar_para_convolucion = []
+    
+    for tiempo in range(m):
+        matriz_t = X_train_auxiliar[0][tiempo,:].reshape(n_lat,n_lon)
+        X_train_auxiliar_para_convolucion.append(matriz_t.tolist())
+        
+    X_conv = np.stack([np.array(X_train_auxiliar_para_convolucion)], axis = -1)
+    return X_conv
+
+def gibbs(n_iter,nombres_parametros,n_covariables,parametros_input,nsites,nsites_completados,m,simulacion_proceso,cov,valid_sim_data_1,trainer_covariables,amortizer_covariables,valid_sim_data_raw_DY,trainer,amortizer):
+    print('###################################')
+    print('Inicia Gibbs...')
+    print('###################################')
+    try:
+        resultados_cov = []
+        delta_pred = []
+        betax_pred = []
+        rho_pred= []
+        inicio = datetime.now()
+        for k in range(n_iter):
+            input_red_1 = datos_para_red1(parametros_input,nsites,m,simulacion_proceso,cov)
+            valid_sim_data_1['sim_data']=input_red_1
+            valid_sim_data_1_c = trainer_covariables.configurator(valid_sim_data_1)
+            posterior_samples_covariables= amortizer_covariables.sample(valid_sim_data_1_c, n_samples=1)[0]
+            input_red_2 = datos_para_red2(posterior_samples_covariables,nsites_completados,m,simulacion_proceso,cov)
+            valid_sim_data_raw_DY['sim_data']=np.expand_dims(input_red_2, axis=0)
+            valid_sim_data_raw_DY_c = trainer.configurator(valid_sim_data_raw_DY)
+            posterior_delta,posterior_betax,posterior_rho= amortizer.sample(valid_sim_data_raw_DY_c, n_samples=1)[0]
+
+            # REVISAR CON CARLOS CONDICIONALES
+            if posterior_delta<0.05:
+                posterior_delta = 0.05
+            if posterior_betax<2.05:
+                posterior_betax = 2.05
+            if posterior_rho<0:
+                posterior_rho = 0.05
+            
+            delta_pred += [posterior_delta]
+            betax_pred += [posterior_betax]
+            rho_pred+= [posterior_rho]
+
+            parametros_input = [posterior_delta,posterior_betax,posterior_rho]
+            resultados_cov.append(posterior_samples_covariables)
+            if k%1000==0:
+                print('############################################')
+                print('Iteracion: '+str(k))
+        print('Finaliza Gibbs...')
+        fin = datetime.now()
+        duracion = fin - inicio
+        df_simul = pd.DataFrame({nombres_parametros[0]:delta_pred,nombres_parametros[1]:betax_pred, nombres_parametros[2]:rho_pred})
+        df_covariables = pd.DataFrame(resultados_cov,columns = ['posterior_g'+str(z+1) for z in range(n_covariables)])
+        resultado_final = pd.concat([df_covariables,df_simul],axis=1)
+        with open('estimacion_'+f"{nombre_modelo}.txt", "a") as f:
+            f.write("######################################################################\n")
+            f.write('Modelo:'+'estimacion_'+f"{nombre_modelo}\n")
+            f.write(f"Tiempo de ejecución: {duracion}\n\n")
+        return(resultado_final)
+    
+    except Exception as e:
+        # Guardar el error en TXT
+        with open('estimacion_'+f"{nombre_modelo}.txt", "a") as f:
+            f.write("######################################################################\n")
+            f.write('Modelo:'+'estimacion_'+f"{nombre_modelo}\n")
+            f.write(f"Error: {type(e).__name__}: {e}\n")
+            f.write("######################################################################\n\n")
+
+
+# REVISAR CON CARLOS PORQUE AFECTA LO SIGUIENTE, PARA VER INTENCIÓN DE ESTA SECCION
+
+datos_guanacaste_filtrados=datos_guanacaste.merge(locaciones_completas[['lon','lat']],how='inner',on =['lon','lat'])
+
+# Para la estimacion de covariables
+X_train_guanacaste= np.zeros((nsites, m))
+Indicator  = np.zeros((nsites,m))
+for sitio in range(nsites):
+    lon_actual=locaciones_completas.iloc[sitio].lon
+    lat_actual=locaciones_completas.iloc[sitio].lat
+    auxi= datos_guanacaste_filtrados[(datos_guanacaste_filtrados.lon==lon_actual)&(datos_guanacaste_filtrados.lat==lat_actual)].sort_values('date')['chirps'].values
+    cuantil_75 = np.quantile(auxi,0.75)
+    X_train_guanacaste[sitio] = np.where(auxi<cuantil_75,cuantil_75,auxi)
+X_train_guanacaste = X_train_guanacaste.reshape(1, nsites, m).transpose(0, 2, 1)
+
+df_resultados_final = pd.DataFrame({})
+
+
+
+# ----- Red ---------------------------------------------------
+
+# REVISAR CON CARLOS ESTE COV, POR LAS DIMENSIONES PODRIA AFECTAR funcion_prediccion_covariables
+cov = train_design
+
+m = m_train
+time_points=m
+simulator_covariables = Simulator(simulator_fun=partial(proceso_covariables, m=time_points))
+model_covariables = GenerativeModel(prior_covariables, simulator_covariables, name="simulador_proceso")
+
+class CustomLSTM_covariables(tf.keras.Model):
+    def __init__(self, hidden_size=512, summary_dim=512):
+        super().__init__()
+        timesteps = time_points
+        features =  nsites_train+3
+        self.LSTM = tf.keras.Sequential(
+            [   tf.keras.layers.Input((timesteps, features)),
+                tf.keras.layers.LSTM(hidden_size, return_sequences=True),
+                tf.keras.layers.LSTM(hidden_size, return_sequences=False),
+                # tf.keras.layers.Flatten(),
+                tf.keras.layers.Dense(hidden_size, activation="relu"),
+                tf.keras.layers.Dense(summary_dim, activation="elu"),
+            ]
+        )
+ 
+    def call(self, x, **kwargs):
+        x = tf.reshape(x, (-1, time_points,  nsites_train+3))  # Ajusta según sea necesario
+        out = self.LSTM(x)
+        return out
+
+# REVISAR CON CARLOS ESTE COV, POR LAS DIMENSIONES PODRIA AFECTAR funcion_prediccion_covariables
+
+def funcion_prediccion_covariables(simul_previa_DY,cov,parametros,n_epochs,n_batch_size,hidden_size,summary_dim,nombre_modelo):
+    COUPLING_NET_SETTINGS = {
+       # "dense_args": dict(units=128, kernel_regularizer=None, activation="relu"),
+        "num_dense": 2,
+        "dropout_prob": 0.2, "bins" : 32
+    }
+
+    summary_net_covariables = CustomLSTM_covariables(hidden_size, summary_dim)
+    # REVISAR CON CARLOS ESTAS FUNCIONES, POR LAS DIMENSIONES PODRIA AFECTAR funcion_prediccion_covariables
+    inference_net_covariables  = InvertibleNetwork(num_params=cov.shape[1], num_coupling_layers=4, coupling_settings=COUPLING_NET_SETTINGS,coupling_design='spline')
+    amortizer_covariables = AmortizedPosterior(inference_net_covariables, summary_net_covariables, name=nombre_modelo)
+    trainer_covariables = Trainer(amortizer=amortizer_covariables, generative_model=model_covariables, memory=False, checkpoint_path = nombre_modelo)
+    valid_sim_data_raw = model_covariables(batch_size=1)
+    # valid_sim_data_DY = trainer_DY.configurator(valid_sim_data_raw_DY)
+    return(amortizer_covariables,trainer_covariables,valid_sim_data_raw)
+
+
+
+
+
+n_epochs = 25
+n_iterations_per_epoch = 1000
+n_batch_size = 128
+n_posteriores= 10000
+
+delta_init = 0.5
+betax_init = 5
+rho_init = 0.5
+
+# REVISAR CON CARLOS ESTA LÍNEA, PORQUE AFECTA LO SIGUIENTE, EN RELACIÓN A LA SECCIÓN PREVIA
+simulacion_proceso = tf.expand_dims(X_train_guanacaste, axis=0)
+parametros_input = [delta_init,betax_init,rho_init]
+nombres_parametros = ['posterior_delta','posterior_betax','posterior_rho']
+
+
+######################################################################################################
+nombre_modelo='covariables_D4_aplicacion_M7'
+amortizer_covariables,trainer_covariables,valid_sim_data_1=funcion_prediccion_covariables('simul_previa_D4',cov,parametros,n_epochs,n_batch_size,1024, 128,nombre_modelo)
+trace=gibbs(n_posteriores,nombres_parametros,7,parametros_input,nsites,nsite_completados,m,simulacion_proceso,cov,valid_sim_data_1,trainer_covariables,amortizer_covariables,valid_sim_data_raw_parametros,trainer,amortizer)
+trace.to_csv('trace_'+nombre_modelo+'.csv')
+##############################################################
+
+covariable_quitar=6
+cov = cov_original[:,0:covariable_quitar]
+parametros=parametros[0:covariable_quitar]
+nombre_modelo='covariables_D4_aplicacion_M6'
+amortizer_covariables,trainer_covariables,valid_sim_data_1=funcion_prediccion_covariables('simul_previa_D4',cov,parametros,n_epochs,n_batch_size,1024, 128,nombre_modelo)
+
+trace=gibbs(n_posteriores,nombres_parametros,covariable_quitar,parametros_input,nsites,nsite_completados,m,simulacion_proceso,cov,valid_sim_data_1,trainer_covariables,amortizer_covariables,valid_sim_data_raw_parametros,trainer,amortizer)
+trace.to_csv('trace_'+nombre_modelo+'.csv')
+##############################################################
+covariable_quitar=5
+cov = cov_original[:,0:covariable_quitar]
+parametros=parametros[0:covariable_quitar]
+nombre_modelo='covariables_D4_aplicacion_M5'
+amortizer_covariables,trainer_covariables,valid_sim_data_1=funcion_prediccion_covariables('simul_previa_D4',cov,parametros,n_epochs,n_batch_size,1024, 128,nombre_modelo)
+
+trace=gibbs(n_posteriores,nombres_parametros,covariable_quitar,parametros_input,nsites,nsite_completados,m,simulacion_proceso,cov,valid_sim_data_1,trainer_covariables,amortizer_covariables,valid_sim_data_raw_parametros,trainer,amortizer)
+trace.to_csv('trace_'+nombre_modelo+'.csv')
+##############################################################
+
+
+covariable_quitar=4
+cov = cov_original[:,0:covariable_quitar]
+parametros=parametros[0:covariable_quitar]
+nombre_modelo='covariables_D4_aplicacion_M4'
+amortizer_covariables,trainer_covariables,valid_sim_data_1=funcion_prediccion_covariables('simul_previa_D4',cov,parametros,n_epochs,n_batch_size,1024, 128,nombre_modelo)
+
+trace=gibbs(n_posteriores,nombres_parametros,covariable_quitar,parametros_input,nsites,nsite_completados,m,simulacion_proceso,cov,valid_sim_data_1,trainer_covariables,amortizer_covariables,valid_sim_data_raw_parametros,trainer,amortizer)
+trace.to_csv('trace_'+nombre_modelo+'.csv')
+##############################################################
+covariable_quitar=3
+cov = cov_original[:,0:covariable_quitar]
+parametros=parametros[0:covariable_quitar]
+nombre_modelo='covariables_D4_aplicacion_M3'
+amortizer_covariables,trainer_covariables,valid_sim_data_1=funcion_prediccion_covariables('simul_previa_D4',cov,parametros,n_epochs,n_batch_size,1024, 128,nombre_modelo)
+
+trace=gibbs(n_posteriores,nombres_parametros,covariable_quitar,parametros_input,nsites,nsite_completados,m,simulacion_proceso,cov,valid_sim_data_1,trainer_covariables,amortizer_covariables,valid_sim_data_raw_parametros,trainer,amortizer)
+trace.to_csv('trace_'+nombre_modelo+'.csv')
+##############################################################
+covariable_quitar=2
+cov = cov_original[:,0:covariable_quitar]
+parametros=parametros[0:covariable_quitar]
+nombre_modelo='covariables_D4_aplicacion_M2'
+amortizer_covariables,trainer_covariables,valid_sim_data_1=funcion_prediccion_covariables('simul_previa_D4',cov,parametros,n_epochs,n_batch_size,1024, 128,nombre_modelo)
+
+trace=gibbs(n_posteriores,nombres_parametros,covariable_quitar,parametros_input,nsites,nsite_completados,m,simulacion_proceso,cov,valid_sim_data_1,trainer_covariables,amortizer_covariables,valid_sim_data_raw_parametros,trainer,amortizer)
+trace.to_csv('trace_'+nombre_modelo+'.csv')
