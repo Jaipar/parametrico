@@ -38,6 +38,7 @@ from funciones import (
 
 # Versión paramétros KAPPA, BETAX, RHO en distribución 
 region = "Los Santos"
+nombre_parametros = [ r"$\kappa$", r"$\beta_x$", r"$\rho$"]
 ruta_datos = "tablas_precipitaciones.parquet"
 fecha_corte = pd.Timestamp("2018-12-31")
 
@@ -50,10 +51,12 @@ total_sims = n_batch_size*n_iterations_per_epoch
 
 # ----- Matriz de diseño -------------------------------------
 
-# columnas_matriz_diseno_n = ['lat', 'lon', 'lat^2', 'lon^2', 'sin_1', 'cos_1', 'sin_2', 'cos_2']
-# columnas_matriz_diseno_3 = ['lat', 'lon',          'lon^2', 'sin_1', 'cos_1', 'sin_2', 'cos_2']
-# columnas_matriz_diseno_2 = ['lat', 'lon', 'lat^2',          'sin_1', 'cos_1', 'sin_2', 'cos_2']
+columnas_matriz_diseno_n = ['lat', 'lon', 'lat^2', 'lon^2', 'sin_1', 'cos_1', 'sin_2', 'cos_2']
+columnas_matriz_diseno_3 = ['lat', 'lon',          'lon^2', 'sin_1', 'cos_1', 'sin_2', 'cos_2']
+columnas_matriz_diseno_2 = ['lat', 'lon', 'lat^2',          'sin_1', 'cos_1', 'sin_2', 'cos_2']
 columnas_matriz_diseno_1 = ['lat', 'lon',                   'sin_1', 'cos_1', 'sin_2', 'cos_2']
+# Selección de variante de columnas para la matriz de diseño
+columnas_matriz_diseno = columnas_matriz_diseno_1
 
 # ----- Preparación de datos ---------------------------------
 
@@ -84,8 +87,8 @@ test = (
 )
 
 poly, scaler = preprocesamiento_escalar_datos(train)
-train_design = procesamiento_matriz_diseno(train, columnas_matriz_diseno_1, poly, scaler)
-test_design = procesamiento_matriz_diseno(test, columnas_matriz_diseno_1, poly, scaler)
+train_design = procesamiento_matriz_diseno(train, columnas_matriz_diseno, poly, scaler)
+test_design = procesamiento_matriz_diseno(test, columnas_matriz_diseno, poly, scaler)
 
 # Grilla rectangular
 ubic_rectangular = (
@@ -104,6 +107,9 @@ nsites_rectangular = len(ubic_rectangular)
 n_lon = ubic_rectangular['lon'].nunique()
 n_lat = ubic_rectangular['lat'].nunique()
 
+# Según ChatGPT, train es un equivalente a datos_region_filtrados, pero con la diferencia de que train contiene únicamente las ubicaciones seleccionadas para entrenamiento y filtradas por fecha, mientras que datos_region_filtrados contiene todas las ubicaciones de la región sin filtrar por fecha.
+datos_region_filtrados = datos_region.merge(ubic_train[['lon', 'lat']], how='inner', on=['lon', 'lat'])
+
 # ============================================================
 # 2. VARIABLES GLOBALES DEL SIMULADOR BAYESFLOW
 # ============================================================
@@ -113,8 +119,8 @@ GAMMA_SD = 3.5
 DELTA_MIN = 0.05
 DELTA_MAX = 5.00
 
-BETA3_MIN = 2.05
-BETA3_MAX = 150.00
+BETAX_MIN = 2.05
+BETAX_MAX = 150.00
 
 RHO_BUTTOM = 0.05
 RHO_UPPPER = 2 * np.max(dist_mat)
@@ -128,6 +134,14 @@ def calcular_alpha(design_mat, gamma_params):
     alpha = alpha_long.reshape(nsites_train, m).T
     return alpha
 
+def model_prior():
+    delta = np.random.uniform(DELTA_MIN, DELTA_MAX)
+    betax = np.random.uniform(BETAX_MIN, BETAX_MAX)
+    rho = np.random.uniform(RHO_BUTTOM, RHO_UPPPER)
+    previas = [delta, betax, rho]
+    previas = np.array(previas)
+    return previas
+
 def model_prior_covariables():
     ncov = train_design.shape[1]
     gammas = previa_covariables(ncov)
@@ -135,11 +149,39 @@ def model_prior_covariables():
     return(previas)
 
 nombre_parametros_covariables = train_design.columns
+prior = Prior(prior_fun=model_prior, param_names=nombre_parametros)
 prior_covariables = Prior(prior_fun=model_prior_covariables, param_names=nombre_parametros_covariables)
+
+def proceso(params, m):
+    delta_auxiliar, betax_auxiliar, rho_auxiliar = params
+    X_train_auxiliar = np.zeros((nsites_rectangular, m))
+
+    X1_auxiliar = simular_X1_weibull(m, delta_auxiliar, nsites = 1).reshape(-1) # (m,)
+    X3_auxiliar_completo = simular_X3(m, betax_auxiliar, rho_auxiliar, nsites_train, dist_mat) # (m,n)
+
+    sitio_ind = 0
+    for sitio in range(nsites_rectangular):
+        if np.isnan(ubic_rectangular.aux.values[sitio]):
+            X_train_auxiliar[sitio] = np.repeat(0,m)
+
+        else:
+            X3_auxiliar = X3_auxiliar_completo[:,sitio_ind]
+            X_train_auxiliar[sitio] = X1_auxiliar * X3_auxiliar
+            sitio_ind +=1
+
+    X_train_auxiliar = X_train_auxiliar.reshape(1, nsites_rectangular, m).transpose(0, 2, 1)
+    X_train_auxiliar_para_convolucion = []
+    
+    for tiempo in range(m):
+        matriz_t = X_train_auxiliar[0][tiempo,:].reshape(n_lat,n_lon)
+        X_train_auxiliar_para_convolucion.append(matriz_t.tolist())
+        
+    X_conv = np.stack([np.array(X_train_auxiliar_para_convolucion)], axis = -1)
+    return X_conv
 
 def proceso_covariables(gamma_params, m):
     delta_auxiliar = np.random.uniform(DELTA_MIN, DELTA_MAX)
-    betax_auxiliar = np.random.uniform(BETA3_MIN, BETA3_MAX)
+    betax_auxiliar = np.random.uniform(BETAX_MIN, BETAX_MAX)
     rho_auxiliar = np.random.uniform(RHO_BUTTOM, RHO_UPPPER)
 
     alpha_full = calcular_alpha(train_design, gamma_params)
@@ -158,21 +200,6 @@ def proceso_covariables(gamma_params, m):
 
     X_train_auxiliar = X_train_auxiliar.reshape(1, m, nsites_train+3)
     return np.array([X_train_auxiliar])
-
-def revisar_GPU():
-    # Configuración para permitir el uso de toda la GPU disponible
-    physical_devices = tf.config.list_physical_devices('GPU')
-    if len(physical_devices) > 0:
-        # Hacer visibles todas las GPUs disponibles
-        tf.config.set_visible_devices(physical_devices, 'GPU')
-
-        # Configurar para permitir el crecimiento dinámico de la memoria de cada GPU
-        for device in physical_devices:
-            tf.config.experimental.set_memory_growth(device, True)
-        print('Gpus detectados!')
-    else:
-        print("No se detectaron GPUs.")
-
 
 # ----- Gibbs -------------------------------------------------
 
@@ -196,6 +223,7 @@ def datos_para_red1(parametros,nsites,m,simulacion):
 
 def datos_para_red2(gamma_params,nsite_completados,m,simulacion,design_mat):
     X_train_auxiliar = np.zeros((nsites_rectangular, m))
+    alpha = calcular_alpha(design_mat, gamma_params)
 
     sitio_ind = 0
     for sitio in range(nsites_rectangular):
@@ -204,7 +232,7 @@ def datos_para_red2(gamma_params,nsite_completados,m,simulacion,design_mat):
 
         else:
             # REVISAR CON CARLOS DIMENSIONES DE MATRIZ DISEÑO Y AUXILIAR
-            alpha_auxiliar = calcular_alpha(design_mat[:, sitio_ind], gamma_params)
+            alpha_auxiliar = alpha[:, sitio_ind]
             auxi = simulacion[0][0][:,sitio_ind]
             sitio_ind +=1
             # REVISAR CON CARLOS LOG
@@ -241,13 +269,12 @@ def gibbs(n_iter,nombres_parametros,n_covariables,parametros_input,nsites,nsites
             valid_sim_data_raw_DY_c = trainer.configurator(valid_sim_data_raw_DY)
             posterior_delta,posterior_betax,posterior_rho= amortizer.sample(valid_sim_data_raw_DY_c, n_samples=1)[0]
 
-            # REVISAR CON CARLOS CONDICIONALES
-            if posterior_delta<0.05:
-                posterior_delta = 0.05
-            if posterior_betax<2.05:
-                posterior_betax = 2.05
-            if posterior_rho<0:
-                posterior_rho = 0.05
+            if posterior_delta < DELTA_MIN:
+                posterior_delta = DELTA_MIN
+            if posterior_betax < BETAX_MIN:
+                posterior_betax = BETAX_MIN
+            if posterior_rho < RHO_BUTTOM:
+                posterior_rho = RHO_BUTTOM
             
             delta_pred += [posterior_delta]
             betax_pred += [posterior_betax]
@@ -278,31 +305,15 @@ def gibbs(n_iter,nombres_parametros,n_covariables,parametros_input,nsites,nsites
             f.write(f"Error: {type(e).__name__}: {e}\n")
             f.write("######################################################################\n\n")
 
-
-# REVISAR CON CARLOS PORQUE AFECTA LO SIGUIENTE, PARA VER INTENCIÓN DE ESTA SECCION
-
-datos_guanacaste_filtrados=datos_guanacaste.merge(locaciones_completas[['lon','lat']],how='inner',on =['lon','lat'])
-
-# Para la estimacion de covariables
-X_train_guanacaste= np.zeros((nsites, m))
-Indicator  = np.zeros((nsites,m))
-for sitio in range(nsites):
-    lon_actual=locaciones_completas.iloc[sitio].lon
-    lat_actual=locaciones_completas.iloc[sitio].lat
-    auxi= datos_guanacaste_filtrados[(datos_guanacaste_filtrados.lon==lon_actual)&(datos_guanacaste_filtrados.lat==lat_actual)].sort_values('date')['chirps'].values
-    cuantil_75 = np.quantile(auxi,0.75)
-    X_train_guanacaste[sitio] = np.where(auxi<cuantil_75,cuantil_75,auxi)
-X_train_guanacaste = X_train_guanacaste.reshape(1, nsites, m).transpose(0, 2, 1)
-
-df_resultados_final = pd.DataFrame({})
-
+# Matriz de precipitaciones de entrenamiento (formato 1, m_train, nsites_train)
+X_train = train.pivot(index='date', columns=['lat', 'lon'], values='chirps')
+X_train = X_train.reindex(columns=pd.MultiIndex.from_frame(ubic_train[['lat', 'lon']]))
+X_train = X_train.to_numpy().reshape(1, m_train, nsites_train)
 
 
 # ----- Red ---------------------------------------------------
 
-# REVISAR CON CARLOS ESTE COV, POR LAS DIMENSIONES PODRIA AFECTAR funcion_prediccion_covariables
-cov = train_design
-
+# MODIFICAR CON LOS DATOS NUESTROS PARA TENER DIMENSION reshape(1, nsites, m).transpose(0, 2, 1)
 m = m_train
 time_points=m
 simulator_covariables = Simulator(simulator_fun=partial(proceso_covariables, m=time_points))
@@ -328,7 +339,8 @@ class CustomLSTM_covariables(tf.keras.Model):
         out = self.LSTM(x)
         return out
 
-# REVISAR CON CARLOS ESTE COV, POR LAS DIMENSIONES PODRIA AFECTAR funcion_prediccion_covariables
+# PONERLE ATENCIÓN a cov, matriz con las características de los sitios.
+# PONERLE ATENCIÓN A nombre_modelo
 
 def funcion_prediccion_covariables(simul_previa_DY,cov,parametros,n_epochs,n_batch_size,hidden_size,summary_dim,nombre_modelo):
     COUPLING_NET_SETTINGS = {
@@ -338,17 +350,27 @@ def funcion_prediccion_covariables(simul_previa_DY,cov,parametros,n_epochs,n_bat
     }
 
     summary_net_covariables = CustomLSTM_covariables(hidden_size, summary_dim)
-    # REVISAR CON CARLOS ESTAS FUNCIONES, POR LAS DIMENSIONES PODRIA AFECTAR funcion_prediccion_covariables
-    inference_net_covariables  = InvertibleNetwork(num_params=cov.shape[1], num_coupling_layers=4, coupling_settings=COUPLING_NET_SETTINGS,coupling_design='spline')
+    # PONERLE ATENCIÓN, hacer pruebas con poco tamaño dimensión.
+    inference_net_covariables  = InvertibleNetwork(num_params=cov.shape[1], num_coupling_layers=4, coupling_settings=COUPLING_NET_SETTINGS, coupling_design='spline')
     amortizer_covariables = AmortizedPosterior(inference_net_covariables, summary_net_covariables, name=nombre_modelo)
     trainer_covariables = Trainer(amortizer=amortizer_covariables, generative_model=model_covariables, memory=False, checkpoint_path = nombre_modelo)
     valid_sim_data_raw = model_covariables(batch_size=1)
     # valid_sim_data_DY = trainer_DY.configurator(valid_sim_data_raw_DY)
     return(amortizer_covariables,trainer_covariables,valid_sim_data_raw)
 
+def revisar_GPU():
+    # Configuración para permitir el uso de toda la GPU disponible
+    physical_devices = tf.config.list_physical_devices('GPU')
+    if len(physical_devices) > 0:
+        # Hacer visibles todas las GPUs disponibles
+        tf.config.set_visible_devices(physical_devices, 'GPU')
 
-
-
+        # Configurar para permitir el crecimiento dinámico de la memoria de cada GPU
+        for device in physical_devices:
+            tf.config.experimental.set_memory_growth(device, True)
+        print('Gpus detectados!')
+    else:
+        print("No se detectaron GPUs.")
 
 n_epochs = 25
 n_iterations_per_epoch = 1000
@@ -359,11 +381,13 @@ delta_init = 0.5
 betax_init = 5
 rho_init = 0.5
 
-# REVISAR CON CARLOS ESTA LÍNEA, PORQUE AFECTA LO SIGUIENTE, EN RELACIÓN A LA SECCIÓN PREVIA
+# PONERLE ATENCIÓN a cov, matriz con las características de los sitios.
 simulacion_proceso = tf.expand_dims(X_train_guanacaste, axis=0)
 parametros_input = [delta_init,betax_init,rho_init]
 nombres_parametros = ['posterior_delta','posterior_betax','posterior_rho']
 
+
+# PONERLE ATENCIÓN, HACERLO UNO PARA CADA VARIANTE.
 
 ######################################################################################################
 nombre_modelo='covariables_D4_aplicacion_M7'
