@@ -38,7 +38,7 @@ from funciones import (
 
 # Versión paramétros KAPPA, BETAX, RHO en distribución 
 region = "Los Santos"
-nombre_parametros = [ r"$\kappa$", r"$\beta_x$", r"$\rho$"]
+nombre_parametros = ['posterior_delta','posterior_betax','posterior_rho'] # nombre_parametros = [ r"$\kappa$", r"$\beta_x$", r"$\rho$"]
 ruta_datos = "tablas_precipitaciones.parquet"
 fecha_corte = pd.Timestamp("2018-12-31")
 
@@ -55,8 +55,17 @@ columnas_matriz_diseno_n = ['lat', 'lon', 'lat^2', 'lon^2', 'sin_1', 'cos_1', 's
 columnas_matriz_diseno_3 = ['lat', 'lon',          'lon^2', 'sin_1', 'cos_1', 'sin_2', 'cos_2']
 columnas_matriz_diseno_2 = ['lat', 'lon', 'lat^2',          'sin_1', 'cos_1', 'sin_2', 'cos_2']
 columnas_matriz_diseno_1 = ['lat', 'lon',                   'sin_1', 'cos_1', 'sin_2', 'cos_2']
+
+configuraciones_modelos_covariables = {
+    '4': {'nombre': 'weibull_covariables_modelo_4', 'num_covs': len(columnas_matriz_diseno_n)+1, 'hidden_size': 1024, 'summary_dim': 128},
+    '3': {'nombre': 'weibull_covariables_modelo_3', 'num_covs': len(columnas_matriz_diseno_3)+1, 'hidden_size': 1024, 'summary_dim': 128},
+    '2': {'nombre': 'weibull_covariables_modelo_2', 'num_covs': len(columnas_matriz_diseno_2)+1, 'hidden_size': 1024, 'summary_dim': 128},
+    '1': {'nombre': 'weibull_covariables_modelo_1', 'num_covs': len(columnas_matriz_diseno_1)+1, 'hidden_size': 1024, 'summary_dim': 128}
+}
+
 # Selección de variante de columnas para la matriz de diseño
 columnas_matriz_diseno = columnas_matriz_diseno_1
+configuracion_covariables = configuraciones_modelos_covariables.get('1')
 
 # ----- Preparación de datos ---------------------------------
 
@@ -309,15 +318,76 @@ def gibbs(n_iter,nombres_parametros,n_covariables,parametros_input,nsites,nsites
 X_train = train.pivot(index='date', columns=['lat', 'lon'], values='chirps')
 X_train = X_train.reindex(columns=pd.MultiIndex.from_frame(ubic_train[['lat', 'lon']]))
 X_train = X_train.to_numpy().reshape(1, m_train, nsites_train)
-
+X_train_tf = tf.expand_dims(X_train, axis=0)
 
 # ----- Red ---------------------------------------------------
 
 # MODIFICAR CON LOS DATOS NUESTROS PARA TENER DIMENSION reshape(1, nsites, m).transpose(0, 2, 1)
 m = m_train
 time_points=m
+
+simulator = Simulator(simulator_fun=partial(proceso, m=time_points))
+model = GenerativeModel(prior, simulator, name="simulador_proceso")
 simulator_covariables = Simulator(simulator_fun=partial(proceso_covariables, m=time_points))
 model_covariables = GenerativeModel(prior_covariables, simulator_covariables, name="simulador_proceso")
+
+from tensorflow.keras.layers import ConvLSTM2D, BatchNormalization, Conv2D, MaxPooling2D, TimeDistributed, Flatten, Dense
+
+class CustomLSTM(tf.keras.Model):
+    def __init__(self, hidden_size=1000, summary_dim=2000):
+        super().__init__()
+        timesteps = m
+        self.LSTM = tf.keras.Sequential(
+            [   tf.keras.layers.Input((timesteps,n_lat, n_lon, 1)),
+                TimeDistributed(Conv2D(filters=32, kernel_size=(3, 3), padding='same')),
+                TimeDistributed(Conv2D(filters=64, kernel_size=(3, 3), activation='relu')),
+                TimeDistributed(tf.keras.layers.Flatten()),
+                tf.keras.layers.LSTM(hidden_size, return_sequences=True),
+                tf.keras.layers.LSTM(hidden_size, return_sequences=False),
+                tf.keras.layers.Dense(hidden_size, activation="relu"),
+                tf.keras.layers.Dense(summary_dim, activation="elu"),
+            ]
+        )
+
+    def call(self, x, **kwargs):
+        #x = tf.reshape(x, (-1, 100, 20))  # Ajusta según sea necesario 
+        out = self.LSTM(x)
+        return out
+
+COUPLING_NET_SETTINGS = {
+   # "dense_args": dict(units=128, kernel_regularizer=None, activation="relu"),
+    "num_dense": 2,
+    "dropout_prob": 0.2, "bins" : 32
+}
+
+model_name = "Santos_Weibull_X1_X3"
+summary_net = CustomLSTM(1024,128)
+inference_net = InvertibleNetwork(
+            num_params=3,
+            num_coupling_layers=10,
+            coupling_settings=COUPLING_NET_SETTINGS,
+            coupling_design='spline'
+)
+amortizer = AmortizedPosterior(
+    inference_net,
+    summary_net,
+    name=model_name
+)
+trainer = Trainer(
+    amortizer=amortizer,
+    generative_model=model,
+    memory=False,
+    checkpoint_path=model_name
+)
+valid_sim_data_raw_parametros = model(batch_size=1)
+
+
+
+
+
+
+
+
 
 class CustomLSTM_covariables(tf.keras.Model):
     def __init__(self, hidden_size=512, summary_dim=512):
@@ -339,10 +409,7 @@ class CustomLSTM_covariables(tf.keras.Model):
         out = self.LSTM(x)
         return out
 
-# PONERLE ATENCIÓN a cov, matriz con las características de los sitios.
-# PONERLE ATENCIÓN A nombre_modelo
-
-def funcion_prediccion_covariables(simul_previa_DY,cov,parametros,n_epochs,n_batch_size,hidden_size,summary_dim,nombre_modelo):
+def funcion_prediccion_covariables(num_covs,hidden_size,summary_dim,nombre_modelo_cov):
     COUPLING_NET_SETTINGS = {
        # "dense_args": dict(units=128, kernel_regularizer=None, activation="relu"),
         "num_dense": 2,
@@ -350,12 +417,10 @@ def funcion_prediccion_covariables(simul_previa_DY,cov,parametros,n_epochs,n_bat
     }
 
     summary_net_covariables = CustomLSTM_covariables(hidden_size, summary_dim)
-    # PONERLE ATENCIÓN, hacer pruebas con poco tamaño dimensión.
-    inference_net_covariables  = InvertibleNetwork(num_params=cov.shape[1], num_coupling_layers=4, coupling_settings=COUPLING_NET_SETTINGS, coupling_design='spline')
-    amortizer_covariables = AmortizedPosterior(inference_net_covariables, summary_net_covariables, name=nombre_modelo)
-    trainer_covariables = Trainer(amortizer=amortizer_covariables, generative_model=model_covariables, memory=False, checkpoint_path = nombre_modelo)
+    inference_net_covariables  = InvertibleNetwork(num_params=num_covs, num_coupling_layers=4, coupling_settings=COUPLING_NET_SETTINGS, coupling_design='spline')
+    amortizer_covariables = AmortizedPosterior(inference_net_covariables, summary_net_covariables, name=nombre_modelo_cov)
+    trainer_covariables = Trainer(amortizer=amortizer_covariables, generative_model=model_covariables, memory=False, checkpoint_path = nombre_modelo_cov)
     valid_sim_data_raw = model_covariables(batch_size=1)
-    # valid_sim_data_DY = trainer_DY.configurator(valid_sim_data_raw_DY)
     return(amortizer_covariables,trainer_covariables,valid_sim_data_raw)
 
 def revisar_GPU():
@@ -381,20 +446,18 @@ delta_init = 0.5
 betax_init = 5
 rho_init = 0.5
 
-# PONERLE ATENCIÓN a cov, matriz con las características de los sitios.
-simulacion_proceso = tf.expand_dims(X_train_guanacaste, axis=0)
 parametros_input = [delta_init,betax_init,rho_init]
-nombres_parametros = ['posterior_delta','posterior_betax','posterior_rho']
-
 
 # PONERLE ATENCIÓN, HACERLO UNO PARA CADA VARIANTE.
 
 ######################################################################################################
-nombre_modelo='covariables_D4_aplicacion_M7'
-amortizer_covariables,trainer_covariables,valid_sim_data_1=funcion_prediccion_covariables('simul_previa_D4',cov,parametros,n_epochs,n_batch_size,1024, 128,nombre_modelo)
-trace=gibbs(n_posteriores,nombres_parametros,7,parametros_input,nsites,nsite_completados,m,simulacion_proceso,cov,valid_sim_data_1,trainer_covariables,amortizer_covariables,valid_sim_data_raw_parametros,trainer,amortizer)
-trace.to_csv('trace_'+nombre_modelo+'.csv')
+amortizer_covariables,trainer_covariables,valid_sim_data_1 = funcion_prediccion_covariables(configuracion_covariables['num_covs'],configuracion_covariables['hidden_size'],configuracion_covariables['summary_dim'],configuracion_covariables['nombre'])
+trace = gibbs(n_posteriores,nombre_parametros,configuracion_covariables['num_covs'],parametros_input,nsites_train,nsites_rectangular,m,X_train_tf,train_design,valid_sim_data_1,trainer_covariables,amortizer_covariables,valid_sim_data_raw_parametros,trainer,amortizer)
+trace.to_csv('trace_'+configuracion_covariables['nombre']+'.csv')
 ##############################################################
+
+
+
 
 covariable_quitar=6
 cov = cov_original[:,0:covariable_quitar]
