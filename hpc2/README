@@ -1,5 +1,7 @@
+¡Muchas gracias! Los resultados corridos anteriormente salieron muy bien.
+Comprobar que las carpetas "Santos_Weibull_X1_X3" y "weibull_covariables_modelo_#" estan dentro del mismo directorio de trabajo.
 Correr:
-1. santos_covariables_weibull_1
-2. santos_covariables_weibull_2
-3. santos_covariables_weibull_3
-4. santos_covariables_weibull_4
+1. gibbs_santos_weibull_1
+2. gibbs_santos_weibull_2
+3. gibbs_santos_weibull_3
+4. gibbs_santos_weibull_4
