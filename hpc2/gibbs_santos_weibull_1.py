@@ -122,8 +122,7 @@ nsites_rectangular = len(ubic_rectangular)
 n_lon = ubic_rectangular['lon'].nunique()
 n_lat = ubic_rectangular['lat'].nunique()
 
-# Según ChatGPT, train es un equivalente a datos_region_filtrados, pero con la diferencia de que train contiene únicamente las ubicaciones seleccionadas para entrenamiento y filtradas por fecha, mientras que datos_region_filtrados contiene todas las ubicaciones de la región sin filtrar por fecha.
-# Hacer PRUEBAS con cov = train y cov = datos_region_filtrados
+# train es un equivalente a datos_region_filtrados, pero con la diferencia de que train contiene únicamente las ubicaciones seleccionadas para entrenamiento y filtradas por fecha, mientras que datos_region_filtrados contiene todas las ubicaciones de la región sin filtrar por fecha.
 datos_region_filtrados = datos_region.merge(ubic_train[['lon', 'lat']], how='inner', on=['lon', 'lat'])
 
 # ============================================================
