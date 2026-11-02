@@ -427,14 +427,14 @@ def revisar_GPU():
 
 ######################################################################################################
 def main():
-    revisar_GPU()
+    # revisar_GPU()
     delta_init = 0.5
     betax_init = 5
     rho_init = 0.5
     parametros_input = [delta_init,betax_init,rho_init]
     ######################################################################################################
     amortizer,trainer,valid_sim_data_raw_parametros = funcion_prediccion_parametros()
-    amortizer_covariables,trainer_covariables,valid_sim_data_1 = funcion_prediccion_covariables(configuracion_covariables['num_covs'],configuracion_covariables['hidden_size'],configuracion_covariables['summary_dim'],configuracion_covariables['nombre'])
+    amortizer_covariables,trainer_covariables,valid_sim_data_1 = funcion_prediccion_covariables(configuracion_covariables['num_covs'],configuracion_covariables['hidden_size'],configuracion_covariables['summary_dim'],nombre_modelo)
     trace = gibbs(n_posteriores,nombre_parametros,configuracion_covariables['num_covs'],parametros_input,nsites_train,nsites_rectangular,m,X_train_tf,train_design,valid_sim_data_1,trainer_covariables,amortizer_covariables,valid_sim_data_raw_parametros,trainer,amortizer)
     trace.to_csv('trace_'+nombre_modelo+'.csv')
     ######################################################################################################
