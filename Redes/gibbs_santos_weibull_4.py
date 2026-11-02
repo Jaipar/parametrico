@@ -41,7 +41,7 @@ region = "Los Santos"
 nombre_parametros = ['posterior_delta','posterior_betax','posterior_rho'] # nombre_parametros = [ r"$\kappa$", r"$\beta_x$", r"$\rho$"]
 ruta_datos = "tablas_precipitaciones.parquet"
 fecha_corte = pd.Timestamp("2018-12-31")
-numero_configuracion_modelo = '3'
+numero_configuracion_modelo = '4'
 model_name = "Santos_Weibull_X1_X3"
 
 # Configuración épocas, entrenamiento, bloques
