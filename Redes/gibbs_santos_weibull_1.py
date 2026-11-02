@@ -41,6 +41,8 @@ region = "Los Santos"
 nombre_parametros = ['posterior_delta','posterior_betax','posterior_rho'] # nombre_parametros = [ r"$\kappa$", r"$\beta_x$", r"$\rho$"]
 ruta_datos = "tablas_precipitaciones.parquet"
 fecha_corte = pd.Timestamp("2018-12-31")
+numero_configuracion_modelo = '1'
+model_name = "Santos_Weibull_X1_X3"
 
 # Configuración épocas, entrenamiento, bloques
 n_epochs = 25
@@ -48,24 +50,28 @@ n_iterations_per_epoch = 1000
 n_batch_size = 128
 block_size = 12800
 total_sims = n_batch_size*n_iterations_per_epoch
+n_posteriores= 10000
 
 # ----- Matriz de diseño -------------------------------------
 
-columnas_matriz_diseno_n = ['lat', 'lon', 'lat^2', 'lon^2', 'sin_1', 'cos_1', 'sin_2', 'cos_2']
-columnas_matriz_diseno_3 = ['lat', 'lon',          'lon^2', 'sin_1', 'cos_1', 'sin_2', 'cos_2']
-columnas_matriz_diseno_2 = ['lat', 'lon', 'lat^2',          'sin_1', 'cos_1', 'sin_2', 'cos_2']
-columnas_matriz_diseno_1 = ['lat', 'lon',                   'sin_1', 'cos_1', 'sin_2', 'cos_2']
-
-configuraciones_modelos_covariables = {
-    '4': {'nombre': 'weibull_covariables_modelo_4', 'num_covs': len(columnas_matriz_diseno_n)+1, 'hidden_size': 1024, 'summary_dim': 128},
-    '3': {'nombre': 'weibull_covariables_modelo_3', 'num_covs': len(columnas_matriz_diseno_3)+1, 'hidden_size': 1024, 'summary_dim': 128},
-    '2': {'nombre': 'weibull_covariables_modelo_2', 'num_covs': len(columnas_matriz_diseno_2)+1, 'hidden_size': 1024, 'summary_dim': 128},
-    '1': {'nombre': 'weibull_covariables_modelo_1', 'num_covs': len(columnas_matriz_diseno_1)+1, 'hidden_size': 1024, 'summary_dim': 128}
+configuraciones_matriz_diseno = {
+    '4': ['lat', 'lon', 'lat^2', 'lon^2', 'sin_1', 'cos_1', 'sin_2', 'cos_2'],
+    '3': ['lat', 'lon',          'lon^2', 'sin_1', 'cos_1', 'sin_2', 'cos_2'],
+    '2': ['lat', 'lon', 'lat^2',          'sin_1', 'cos_1', 'sin_2', 'cos_2'],
+    '1': ['lat', 'lon',                   'sin_1', 'cos_1', 'sin_2', 'cos_2']
 }
 
-# Selección de variante de columnas para la matriz de diseño
-columnas_matriz_diseno = columnas_matriz_diseno_1
-configuracion_covariables = configuraciones_modelos_covariables.get('1')
+configuraciones_modelos_covariables = {
+    '4': {'nombre_modelo': 'weibull_covariables_modelo_4', 'num_covs': len(configuraciones_matriz_diseno['4'])+1, 'hidden_size': 1024, 'summary_dim': 128},
+    '3': {'nombre_modelo': 'weibull_covariables_modelo_3', 'num_covs': len(configuraciones_matriz_diseno['3'])+1, 'hidden_size': 1024, 'summary_dim': 128},
+    '2': {'nombre_modelo': 'weibull_covariables_modelo_2', 'num_covs': len(configuraciones_matriz_diseno['2'])+1, 'hidden_size': 1024, 'summary_dim': 128},
+    '1': {'nombre_modelo': 'weibull_covariables_modelo_1', 'num_covs': len(configuraciones_matriz_diseno['1'])+1, 'hidden_size': 1024, 'summary_dim': 128}
+}
+
+# Selección de variante de configuración de matriz diseño y modelo de covariables
+columnas_matriz_diseno = configuraciones_matriz_diseno.get(numero_configuracion_modelo)
+configuracion_covariables = configuraciones_modelos_covariables.get(numero_configuracion_modelo)
+nombre_modelo = configuracion_covariables['nombre_modelo']
 
 # ----- Preparación de datos ---------------------------------
 
@@ -117,6 +123,7 @@ n_lon = ubic_rectangular['lon'].nunique()
 n_lat = ubic_rectangular['lat'].nunique()
 
 # Según ChatGPT, train es un equivalente a datos_region_filtrados, pero con la diferencia de que train contiene únicamente las ubicaciones seleccionadas para entrenamiento y filtradas por fecha, mientras que datos_region_filtrados contiene todas las ubicaciones de la región sin filtrar por fecha.
+# Hacer PRUEBAS con cov = train y cov = datos_region_filtrados
 datos_region_filtrados = datos_region.merge(ubic_train[['lon', 'lat']], how='inner', on=['lon', 'lat'])
 
 # ============================================================
@@ -230,7 +237,7 @@ def datos_para_red1(parametros,nsites,m,simulacion):
     X_train_auxiliar = X_train_auxiliar.reshape(1, nsites+3, m).transpose(0,2,1)
     return np.array([X_train_auxiliar])
 
-def datos_para_red2(gamma_params,nsite_completados,m,simulacion,design_mat):
+def datos_para_red2(gamma_params,nsites_rectangular,m,simulacion,design_mat):
     X_train_auxiliar = np.zeros((nsites_rectangular, m))
     alpha = calcular_alpha(design_mat, gamma_params)
 
@@ -240,12 +247,10 @@ def datos_para_red2(gamma_params,nsite_completados,m,simulacion,design_mat):
             X_train_auxiliar[sitio] = np.repeat(0,m)
 
         else:
-            # REVISAR CON CARLOS DIMENSIONES DE MATRIZ DISEÑO Y AUXILIAR
             alpha_auxiliar = alpha[:, sitio_ind]
             auxi = simulacion[0][0][:,sitio_ind]
             sitio_ind +=1
-            # REVISAR CON CARLOS LOG
-            auxi = np.log(auxi/alpha_auxiliar)
+            auxi = auxi/alpha_auxiliar
             X_train_auxiliar[sitio] = auxi
 
     X_train_auxiliar = X_train_auxiliar.reshape(1, nsites_rectangular, m).transpose(0, 2, 1)
@@ -258,7 +263,7 @@ def datos_para_red2(gamma_params,nsite_completados,m,simulacion,design_mat):
     X_conv = np.stack([np.array(X_train_auxiliar_para_convolucion)], axis = -1)
     return X_conv
 
-def gibbs(n_iter,nombres_parametros,n_covariables,parametros_input,nsites,nsites_completados,m,simulacion_proceso,cov,valid_sim_data_1,trainer_covariables,amortizer_covariables,valid_sim_data_raw_DY,trainer,amortizer):
+def gibbs(n_iter,nombres_parametros,n_covariables,parametros_input,nsites,nsites_rectangular,m,simulacion_proceso,cov,valid_sim_data_1,trainer_covariables,amortizer_covariables,valid_sim_data_raw_DY,trainer,amortizer):
     print('###################################')
     print('Inicia Gibbs...')
     print('###################################')
@@ -269,11 +274,11 @@ def gibbs(n_iter,nombres_parametros,n_covariables,parametros_input,nsites,nsites
         rho_pred= []
         inicio = datetime.now()
         for k in range(n_iter):
-            input_red_1 = datos_para_red1(parametros_input,nsites,m,simulacion_proceso,cov)
+            input_red_1 = datos_para_red1(parametros_input,nsites,m,simulacion_proceso)
             valid_sim_data_1['sim_data']=input_red_1
             valid_sim_data_1_c = trainer_covariables.configurator(valid_sim_data_1)
             posterior_samples_covariables= amortizer_covariables.sample(valid_sim_data_1_c, n_samples=1)[0]
-            input_red_2 = datos_para_red2(posterior_samples_covariables,nsites_completados,m,simulacion_proceso,cov)
+            input_red_2 = datos_para_red2(posterior_samples_covariables,nsites_rectangular,m,simulacion_proceso,cov)
             valid_sim_data_raw_DY['sim_data']=np.expand_dims(input_red_2, axis=0)
             valid_sim_data_raw_DY_c = trainer.configurator(valid_sim_data_raw_DY)
             posterior_delta,posterior_betax,posterior_rho= amortizer.sample(valid_sim_data_raw_DY_c, n_samples=1)[0]
@@ -326,10 +331,9 @@ X_train_tf = tf.expand_dims(X_train, axis=0)
 m = m_train
 time_points=m
 
+# Sobre distribuciones de los paramétros de X1,X2,X3
 simulator = Simulator(simulator_fun=partial(proceso, m=time_points))
 model = GenerativeModel(prior, simulator, name="simulador_proceso")
-simulator_covariables = Simulator(simulator_fun=partial(proceso_covariables, m=time_points))
-model_covariables = GenerativeModel(prior_covariables, simulator_covariables, name="simulador_proceso")
 
 from tensorflow.keras.layers import ConvLSTM2D, BatchNormalization, Conv2D, MaxPooling2D, TimeDistributed, Flatten, Dense
 
@@ -354,40 +358,24 @@ class CustomLSTM(tf.keras.Model):
         out = self.LSTM(x)
         return out
 
-COUPLING_NET_SETTINGS = {
-   # "dense_args": dict(units=128, kernel_regularizer=None, activation="relu"),
-    "num_dense": 2,
-    "dropout_prob": 0.2, "bins" : 32
-}
+def funcion_prediccion_parametros(num_params=3,hidden_size=1024,summary_dim=128,model_name=model_name):
+    COUPLING_NET_SETTINGS = {
+    # "dense_args": dict(units=128, kernel_regularizer=None, activation="relu"),
+        "num_dense": 2,
+        "dropout_prob": 0.2, "bins" : 32
+    }
 
-model_name = "Santos_Weibull_X1_X3"
-summary_net = CustomLSTM(1024,128)
-inference_net = InvertibleNetwork(
-            num_params=3,
-            num_coupling_layers=10,
-            coupling_settings=COUPLING_NET_SETTINGS,
-            coupling_design='spline'
-)
-amortizer = AmortizedPosterior(
-    inference_net,
-    summary_net,
-    name=model_name
-)
-trainer = Trainer(
-    amortizer=amortizer,
-    generative_model=model,
-    memory=False,
-    checkpoint_path=model_name
-)
-valid_sim_data_raw_parametros = model(batch_size=1)
+    summary_net = CustomLSTM(hidden_size,summary_dim)
+    inference_net = InvertibleNetwork(num_params=num_params, num_coupling_layers=10, coupling_settings=COUPLING_NET_SETTINGS, coupling_design='spline')
+    amortizer = AmortizedPosterior(inference_net, summary_net, name=model_name)
+    trainer = Trainer(amortizer=amortizer, generative_model=model, memory=False, checkpoint_path=model_name)
+    valid_sim_data_raw_parametros = model(batch_size=1)
 
+    return(amortizer,trainer,valid_sim_data_raw_parametros)
 
-
-
-
-
-
-
+# Sobre las distribuciones de las covariables (gamma0, gamma_1, gamma_2, ..., gamma_p)
+simulator_covariables = Simulator(simulator_fun=partial(proceso_covariables, m=time_points))
+model_covariables = GenerativeModel(prior_covariables, simulator_covariables, name="simulador_proceso")
 
 class CustomLSTM_covariables(tf.keras.Model):
     def __init__(self, hidden_size=512, summary_dim=512):
@@ -437,71 +425,19 @@ def revisar_GPU():
     else:
         print("No se detectaron GPUs.")
 
-n_epochs = 25
-n_iterations_per_epoch = 1000
-n_batch_size = 128
-n_posteriores= 10000
-
-delta_init = 0.5
-betax_init = 5
-rho_init = 0.5
-
-parametros_input = [delta_init,betax_init,rho_init]
-
-# PONERLE ATENCIÓN, HACERLO UNO PARA CADA VARIANTE.
-
 ######################################################################################################
-amortizer_covariables,trainer_covariables,valid_sim_data_1 = funcion_prediccion_covariables(configuracion_covariables['num_covs'],configuracion_covariables['hidden_size'],configuracion_covariables['summary_dim'],configuracion_covariables['nombre'])
-trace = gibbs(n_posteriores,nombre_parametros,configuracion_covariables['num_covs'],parametros_input,nsites_train,nsites_rectangular,m,X_train_tf,train_design,valid_sim_data_1,trainer_covariables,amortizer_covariables,valid_sim_data_raw_parametros,trainer,amortizer)
-trace.to_csv('trace_'+configuracion_covariables['nombre']+'.csv')
-##############################################################
+def main():
+    revisar_GPU()
+    delta_init = 0.5
+    betax_init = 5
+    rho_init = 0.5
+    parametros_input = [delta_init,betax_init,rho_init]
+    ######################################################################################################
+    amortizer,trainer,valid_sim_data_raw_parametros = funcion_prediccion_parametros()
+    amortizer_covariables,trainer_covariables,valid_sim_data_1 = funcion_prediccion_covariables(configuracion_covariables['num_covs'],configuracion_covariables['hidden_size'],configuracion_covariables['summary_dim'],configuracion_covariables['nombre'])
+    trace = gibbs(n_posteriores,nombre_parametros,configuracion_covariables['num_covs'],parametros_input,nsites_train,nsites_rectangular,m,X_train_tf,train_design,valid_sim_data_1,trainer_covariables,amortizer_covariables,valid_sim_data_raw_parametros,trainer,amortizer)
+    trace.to_csv('trace_'+nombre_modelo+'.csv')
+    ######################################################################################################
 
-
-
-
-covariable_quitar=6
-cov = cov_original[:,0:covariable_quitar]
-parametros=parametros[0:covariable_quitar]
-nombre_modelo='covariables_D4_aplicacion_M6'
-amortizer_covariables,trainer_covariables,valid_sim_data_1=funcion_prediccion_covariables('simul_previa_D4',cov,parametros,n_epochs,n_batch_size,1024, 128,nombre_modelo)
-
-trace=gibbs(n_posteriores,nombres_parametros,covariable_quitar,parametros_input,nsites,nsite_completados,m,simulacion_proceso,cov,valid_sim_data_1,trainer_covariables,amortizer_covariables,valid_sim_data_raw_parametros,trainer,amortizer)
-trace.to_csv('trace_'+nombre_modelo+'.csv')
-##############################################################
-covariable_quitar=5
-cov = cov_original[:,0:covariable_quitar]
-parametros=parametros[0:covariable_quitar]
-nombre_modelo='covariables_D4_aplicacion_M5'
-amortizer_covariables,trainer_covariables,valid_sim_data_1=funcion_prediccion_covariables('simul_previa_D4',cov,parametros,n_epochs,n_batch_size,1024, 128,nombre_modelo)
-
-trace=gibbs(n_posteriores,nombres_parametros,covariable_quitar,parametros_input,nsites,nsite_completados,m,simulacion_proceso,cov,valid_sim_data_1,trainer_covariables,amortizer_covariables,valid_sim_data_raw_parametros,trainer,amortizer)
-trace.to_csv('trace_'+nombre_modelo+'.csv')
-##############################################################
-
-
-covariable_quitar=4
-cov = cov_original[:,0:covariable_quitar]
-parametros=parametros[0:covariable_quitar]
-nombre_modelo='covariables_D4_aplicacion_M4'
-amortizer_covariables,trainer_covariables,valid_sim_data_1=funcion_prediccion_covariables('simul_previa_D4',cov,parametros,n_epochs,n_batch_size,1024, 128,nombre_modelo)
-
-trace=gibbs(n_posteriores,nombres_parametros,covariable_quitar,parametros_input,nsites,nsite_completados,m,simulacion_proceso,cov,valid_sim_data_1,trainer_covariables,amortizer_covariables,valid_sim_data_raw_parametros,trainer,amortizer)
-trace.to_csv('trace_'+nombre_modelo+'.csv')
-##############################################################
-covariable_quitar=3
-cov = cov_original[:,0:covariable_quitar]
-parametros=parametros[0:covariable_quitar]
-nombre_modelo='covariables_D4_aplicacion_M3'
-amortizer_covariables,trainer_covariables,valid_sim_data_1=funcion_prediccion_covariables('simul_previa_D4',cov,parametros,n_epochs,n_batch_size,1024, 128,nombre_modelo)
-
-trace=gibbs(n_posteriores,nombres_parametros,covariable_quitar,parametros_input,nsites,nsite_completados,m,simulacion_proceso,cov,valid_sim_data_1,trainer_covariables,amortizer_covariables,valid_sim_data_raw_parametros,trainer,amortizer)
-trace.to_csv('trace_'+nombre_modelo+'.csv')
-##############################################################
-covariable_quitar=2
-cov = cov_original[:,0:covariable_quitar]
-parametros=parametros[0:covariable_quitar]
-nombre_modelo='covariables_D4_aplicacion_M2'
-amortizer_covariables,trainer_covariables,valid_sim_data_1=funcion_prediccion_covariables('simul_previa_D4',cov,parametros,n_epochs,n_batch_size,1024, 128,nombre_modelo)
-
-trace=gibbs(n_posteriores,nombres_parametros,covariable_quitar,parametros_input,nsites,nsite_completados,m,simulacion_proceso,cov,valid_sim_data_1,trainer_covariables,amortizer_covariables,valid_sim_data_raw_parametros,trainer,amortizer)
-trace.to_csv('trace_'+nombre_modelo+'.csv')
+if __name__ == "__main__":
+    main()
