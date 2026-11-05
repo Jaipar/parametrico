@@ -1,0 +1,98 @@
+============================================================
+Job ID             : 140302
+Array task         : 2
+Host               : cngpu001
+HPC2_DIR           : /home/carlos.pasquier/Calculos/cafe_extremos/cafeextremos_hpc/hpc2
+PROJECT_DIR        : /home/carlos.pasquier/Calculos/cafe_extremos/cafeextremos_hpc
+Imagen             : /home/carlos.pasquier/Calculos/cafe_extremos/cafeextremos_hpc/cafeextremos.sif
+Rutina             : gibbs_santos_weibull_3.py
+CUDA_VISIBLE_DEVICES=0
+SLURM_JOB_GPUS     : 0
+Inicio             : Tue Nov  3 04:09:46 PM CST 2026
+============================================================
+Tue Nov  3 16:09:46 2026       
++-----------------------------------------------------------------------------------------+
+| NVIDIA-SMI 570.172.08             Driver Version: 570.172.08     CUDA Version: 12.8     |
+|-----------------------------------------+------------------------+----------------------+
+| GPU  Name                 Persistence-M | Bus-Id          Disp.A | Volatile Uncorr. ECC |
+| Fan  Temp   Perf          Pwr:Usage/Cap |           Memory-Usage | GPU-Util  Compute M. |
+|                                         |                        |               MIG M. |
+|=========================================+========================+======================|
+|   0  NVIDIA A100-SXM4-80GB          On  |   00000000:17:00.0 Off |                    0 |
+| N/A   25C    P0             61W /  500W |       0MiB /  81920MiB |      0%      Default |
+|                                         |                        |             Disabled |
++-----------------------------------------+------------------------+----------------------+
+                                                                                         
++-----------------------------------------------------------------------------------------+
+| Processes:                                                                              |
+|  GPU   GI   CI              PID   Type   Process name                        GPU Memory |
+|        ID   ID                                                               Usage      |
+|=========================================================================================|
+|  No running processes found                                                             |
++-----------------------------------------------------------------------------------------+
+------------------------------------------------------------
+Python             : /usr/bin/python
+Directorio         : /work/hpc2
+Rutina             : gibbs_santos_weibull_3.py
+PYTHONPATH         : /work/hpc2:/opt/cafeextremos:
+Inicio Python      : Tue Nov  3 16:09:47 CST 2026
+------------------------------------------------------------
+2026-11-03 16:09:49.455828: E external/local_xla/xla/stream_executor/cuda/cuda_dnn.cc:9261] Unable to register cuDNN factory: Attempting to register factory for plugin cuDNN when one has already been registered
+2026-11-03 16:09:49.456005: E external/local_xla/xla/stream_executor/cuda/cuda_fft.cc:607] Unable to register cuFFT factory: Attempting to register factory for plugin cuFFT when one has already been registered
+2026-11-03 16:09:49.589714: E external/local_xla/xla/stream_executor/cuda/cuda_blas.cc:1515] Unable to register cuBLAS factory: Attempting to register factory for plugin cuBLAS when one has already been registered
+TensorFlow: 2.15.0
+GPU(s): [PhysicalDevice(name='/physical_device:GPU:0', device_type='GPU')]
+2026-11-03 16:09:56.314380: E external/local_xla/xla/stream_executor/cuda/cuda_dnn.cc:9261] Unable to register cuDNN factory: Attempting to register factory for plugin cuDNN when one has already been registered
+2026-11-03 16:09:56.314546: E external/local_xla/xla/stream_executor/cuda/cuda_fft.cc:607] Unable to register cuFFT factory: Attempting to register factory for plugin cuFFT when one has already been registered
+2026-11-03 16:09:56.315998: E external/local_xla/xla/stream_executor/cuda/cuda_blas.cc:1515] Unable to register cuBLAS factory: Attempting to register factory for plugin cuBLAS when one has already been registered
+INFO:root:Performing 2 pilot runs with the simulador_proceso model...
+INFO:root:Shape of parameter batch after 2 pilot simulations: (batch_size = 2, 3)
+INFO:root:Shape of simulation batch after 2 pilot simulations: (batch_size = 2, 228, 8, 9, 1)
+INFO:root:No optional prior non-batchable context provided.
+INFO:root:No optional prior batchable context provided.
+INFO:root:No optional simulation non-batchable context provided.
+INFO:root:No optional simulation batchable context provided.
+INFO:root:Performing 2 pilot runs with the simulador_proceso model...
+INFO:root:Shape of parameter batch after 2 pilot simulations: (batch_size = 2, 8)
+INFO:root:Shape of simulation batch after 2 pilot simulations: (batch_size = 2, 1, 1, 228, 42)
+INFO:root:No optional prior non-batchable context provided.
+INFO:root:No optional prior batchable context provided.
+INFO:root:No optional simulation non-batchable context provided.
+INFO:root:No optional simulation batchable context provided.
+INFO:root:Initialized empty loss history.
+INFO:root:Initialized networks from scratch.
+INFO:root:Performing a consistency check with provided components...
+INFO:root:Done.
+INFO:root:Loaded loss history from weibull_covariables_modelo_3/history_250.pkl.
+INFO:root:Networks loaded from weibull_covariables_modelo_3/ckpt-250
+INFO:root:Performing a consistency check with provided components...
+INFO:root:Done.
+###################################
+Inicia Gibbs...
+###################################
+############################################
+Iteracion: 0
+############################################
+Iteracion: 1000
+############################################
+Iteracion: 2000
+############################################
+Iteracion: 3000
+############################################
+Iteracion: 4000
+############################################
+Iteracion: 5000
+############################################
+Iteracion: 6000
+############################################
+Iteracion: 7000
+############################################
+Iteracion: 8000
+############################################
+Iteracion: 9000
+Finaliza Gibbs...
+============================================================
+Rutina finalizada  : gibbs_santos_weibull_3.py
+Codigo de salida   : 0
+Fin                : Tue Nov  3 05:49:29 PM CST 2026
+============================================================

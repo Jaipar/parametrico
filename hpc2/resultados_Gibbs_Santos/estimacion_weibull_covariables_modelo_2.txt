@@ -1,0 +1,4 @@
+######################################################################
+Modelo:estimacion_weibull_covariables_modelo_2
+Tiempo de ejecución: 1:41:02.303555
+
